@@ -6,3 +6,6 @@ faiss-cpu
 httpx
 python-dotenv
 redis
+prometheus-client
+structlog
+tenacity
