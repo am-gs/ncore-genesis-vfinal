@@ -28,7 +28,7 @@ sudo apt-get install -y \
   libjemalloc2 zram-config irqbalance \
   build-essential python3-pip python3-venv python3-dev \
   docker-ce docker-ce-cli containerd.io docker-compose-plugin \
-  ufw git redis-server
+  git redis-server
 
 sudo systemctl enable --now docker redis-server
 
@@ -163,13 +163,7 @@ python3 -m venv "$NCORE_DIR/core/venv"
 "$NCORE_DIR/core/venv/bin/pip" install --upgrade pip
 "$NCORE_DIR/core/venv/bin/pip" install -r "$NCORE_DIR/core/requirements.txt"
 
-# --- Phase 6: Firewall & Tailscale (manual auth) ---
-sudo ufw default deny incoming
-sudo ufw default allow outgoing
-sudo ufw allow 22/tcp
-sudo ufw allow 8080/tcp
-yes | sudo ufw enable || true
-
+# --- Phase 6: Tailscale (manual auth) ---
 if ! command -v tailscale >/dev/null 2>&1; then
   curl -fsSL https://tailscale.com/install.sh | sh
 fi
@@ -181,9 +175,9 @@ NODE_VERSION=$(node -v | cut -c2-)
 SERVICE_PATH="$HOME/.local/bin:$HOME/.nvm/versions/node/v${NODE_VERSION}/bin:$NCORE_DIR/core/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 JEMALLOC_PATH=$(find /usr/lib/aarch64-linux-gnu /usr/lib/x86_64-linux-gnu /usr/lib -name libjemalloc.so.2 -print -quit 2>/dev/null)
 if [ -n "$JEMALLOC_PATH" ]; then
-  PRELOAD_STRING="$JEMALLOC_PATH:$NCORE_DIR/libs/force_nodelay.so:$NCORE_DIR/libs/crypt_shredder.so"
+  PRELOAD_STRING="$JEMALLOC_PATH:$NCORE_DIR/libs/force_nodelay.so"
 else
-  PRELOAD_STRING="$NCORE_DIR/libs/force_nodelay.so:$NCORE_DIR/libs/crypt_shredder.so"
+  PRELOAD_STRING="$NCORE_DIR/libs/force_nodelay.so"
 fi
 
 sudo tee /etc/systemd/system/ncore-gateway.service > /dev/null <<EOF
@@ -199,7 +193,7 @@ Environment="NODE_OPTIONS=--max-old-space-size=16384"
 Environment="UV_USE_IO_URING=1"
 Environment="LD_PRELOAD=$PRELOAD_STRING"
 WorkingDirectory=$NCORE_DIR
-ExecStart=$NCORE_DIR/core/venv/bin/python -m uvicorn orchestrator:app --host 0.0.0.0 --port 8080
+ExecStart=$NCORE_DIR/core/venv/bin/python -m uvicorn orchestrator:app --host 127.0.0.1 --port 8080
 Restart=always
 RestartSec=1
 LimitNOFILE=2097152
