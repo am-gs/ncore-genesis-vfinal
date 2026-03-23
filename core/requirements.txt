@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+langgraph
+sentence-transformers
+faiss-cpu
+httpx
+python-dotenv
+redis
