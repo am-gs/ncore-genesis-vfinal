@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+core/venv/
+*.egg-info/
+dist/
+build/
+
+# Compiled C shims
+libs/*.so
+libs/*.o
+
+# Secrets
+.env
+*.env
+*.key
+*.pem
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+journald/
