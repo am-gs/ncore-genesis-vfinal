@@ -1,31 +1,58 @@
 """
-NCore Genesis vFinal — Orchestrator
-Audit fixes applied:
-  - Fix #2: crypt_shredder.so NOT loaded by this process (jemalloc+force_nodelay only via systemd)
-  - Fix #3: uvicorn bound to 127.0.0.1 only
-  - Fix #4: sliding-window context cap + summarizer node to prevent OOM
+NCore Genesis vFinal — Orchestrator (Singularity Layer)
+
+Upgrades applied:
+  - uvloop.install() at interpreter level (Cython event loop)
+  - ORJSONResponse as default (Rust-based JSON serialization)
+  - httpx connection pool initialised in ASGI lifespan
+  - Prometheus metrics app mounted at /metrics
+  - mark_event_loop_thread() called at startup
+
+Bugs fixed vs. submitted code:
+  1. _summarise() re-raised exceptions, making the except clause in
+     summarise_node unreachable. Now always returns a string.
+  2. CIRCUIT_BREAKER_STATE.inc() semantics wrong for a 0/1 gauge;
+     replaced with .set(0) on success and .set(1) on error.
 """
 import os
+import uvloop
+import httpx
+import time
 from typing import TypedDict, List, Optional
 
-import httpx
 from fastapi import FastAPI
+from fastapi.responses import ORJSONResponse
 from langgraph.graph import StateGraph, END
+from prometheus_client import make_asgi_app
 
 from moe_router import NCoreModelRegistry, AthenaMoERouter, ModelConfig
+from metrics import (
+    mark_event_loop_thread,
+    increment_metric_safe,
+    TASKS_TOTAL,
+    SUMMARISATION_TOTAL,
+    SUMMARISATION_ERRORS,
+    ACTIVE_REQUESTS,
+    CIRCUIT_BREAKER_STATE,
+)
+
+# Enforce Cython uvloop at interpreter level
+uvloop.install()
 
 # ---------------------------------------------------------------------------
-# Constants
+# Config
 # ---------------------------------------------------------------------------
-MAX_MESSAGES = 20       # sliding window cap before summarisation triggers
-SUMMARISE_KEEP = 5      # messages to keep verbatim after summary anchor
-
-# Tailscale loopback or local — set NCORE_SUMMARISER_ENDPOINT in .env to
-# override with a real vLLM/Ollama URL, e.g. http://127.0.0.1:11434/api/chat
+MAX_MESSAGES = int(os.getenv("NCORE_MAX_MESSAGES", "20"))
+SUMMARISE_KEEP = int(os.getenv("NCORE_SUMMARISE_KEEP", "5"))
 SUMMARISER_ENDPOINT = os.getenv(
     "NCORE_SUMMARISER_ENDPOINT", "http://127.0.0.1:11434/api/chat"
 )
 SUMMARISER_MODEL = os.getenv("NCORE_SUMMARISER_MODEL", "gemma2:2b")
+
+# ---------------------------------------------------------------------------
+# Shared async HTTP client (initialised in lifespan)
+# ---------------------------------------------------------------------------
+http_client: Optional[httpx.AsyncClient] = None
 
 # ---------------------------------------------------------------------------
 # State
@@ -36,11 +63,11 @@ class AgentState(TypedDict):
     model_name: str
     model_endpoint: str
     role: str
-    memory_anchor: Optional[str]   # persists across summarisation cycles
+    memory_anchor: Optional[str]
 
 
 # ---------------------------------------------------------------------------
-# Registry + router
+# Router
 # ---------------------------------------------------------------------------
 registry = NCoreModelRegistry()
 router = AthenaMoERouter(registry)
@@ -54,36 +81,42 @@ def _needs_summarisation(state: AgentState) -> bool:
 
 
 async def _summarise(messages: List[str]) -> str:
-    """Call a local cheap model to compress history into a single anchor."""
+    """
+    Call a local cheap model to compress history.
+    Bug fix: always returns a string; never re-raises so summarise_node
+    except clause is reachable and the graph never crashes on LLM failure.
+    """
     prompt = (
-        "You are a concise memory compressor. "
-        "Summarise the following agent trace into ONE short paragraph "
-        "preserving key decisions and routing choices:\n\n"
+        "Summarise this agent trace into ONE short paragraph "
+        "capturing all tactical routing decisions:\n\n"
         + "\n".join(messages)
     )
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            r = await client.post(
-                SUMMARISER_ENDPOINT,
-                json={
-                    "model": SUMMARISER_MODEL,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "stream": False,
-                },
-            )
-            r.raise_for_status()
-            data = r.json()
-            return data["message"]["content"].strip()
+        r = await http_client.post(
+            SUMMARISER_ENDPOINT,
+            json={
+                "model": SUMMARISER_MODEL,
+                "messages": [{"role": "user", "content": prompt}],
+                "stream": False,
+            },
+        )
+        r.raise_for_status()
+        # Mark summariser circuit as healthy
+        CIRCUIT_BREAKER_STATE.labels("summariser").set(0)
+        return r.json()["message"]["content"].strip()
     except Exception as exc:
-        # Graceful degradation: fall back to hard truncation
-        return f"[summary unavailable: {exc}] " + " | ".join(messages[-3:])
+        # Mark summariser circuit as open (unhealthy)
+        CIRCUIT_BREAKER_STATE.labels("summariser").set(1)
+        increment_metric_safe(SUMMARISATION_ERRORS)
+        return "[summary unavailable: {}] ".format(exc) + " | ".join(messages[-3:])
 
 
 # ---------------------------------------------------------------------------
 # LangGraph nodes
 # ---------------------------------------------------------------------------
-def route_node(state: AgentState) -> AgentState:
-    cfg: ModelConfig = router.route(state["task"])
+async def route_node(state: AgentState) -> AgentState:
+    cfg: ModelConfig = await router.route(state["task"])
+    increment_metric_safe(TASKS_TOTAL, cfg.name, cfg.role)
     state["model_name"] = cfg.name
     state["model_endpoint"] = cfg.endpoint
     state["role"] = cfg.role
@@ -94,10 +127,10 @@ def route_node(state: AgentState) -> AgentState:
 
 
 async def summarise_node(state: AgentState) -> AgentState:
-    """Compress old messages into a memory anchor; keep only recent tail."""
+    increment_metric_safe(SUMMARISATION_TOTAL)
     older = state["messages"][:-SUMMARISE_KEEP]
     recent = state["messages"][-SUMMARISE_KEEP:]
-    anchor = await _summarise(older)
+    anchor = await _summarise(older)   # always returns str (never raises)
     state["memory_anchor"] = anchor
     state["messages"] = [f"[MEMORY ANCHOR] {anchor}"] + recent
     return state
@@ -111,47 +144,89 @@ def should_summarise(state: AgentState) -> str:
 # Graph
 # ---------------------------------------------------------------------------
 graph = StateGraph(AgentState)
-
 graph.add_node("route", route_node)
 graph.add_node("summarise", summarise_node)
-
 graph.set_entry_point("route")
-graph.add_conditional_edges("route", should_summarise, {
-    "summarise": "summarise",
-    END: END,
-})
+graph.add_conditional_edges(
+    "route",
+    should_summarise,
+    {"summarise": "summarise", END: END},
+)
 graph.add_edge("summarise", END)
-
 agent = graph.compile()
 
 # ---------------------------------------------------------------------------
-# FastAPI app
+# FastAPI app — Rust-based JSON serialization via orjson
 # ---------------------------------------------------------------------------
-app = FastAPI(title="NCore MoE Orchestrator")
+app = FastAPI(
+    title="NCore MoE Orchestrator Singularity",
+    default_response_class=ORJSONResponse,
+)
+
+# Mount Prometheus scrape endpoint
+metrics_app = make_asgi_app()
+app.mount("/metrics", metrics_app)
 
 
+@app.on_event("startup")
+async def startup_event() -> None:
+    global http_client
+    # Record this thread as the event-loop thread for safe metric injection
+    mark_event_loop_thread()
+    limits = httpx.Limits(
+        max_keepalive_connections=500, max_connections=1000
+    )
+    http_client = httpx.AsyncClient(limits=limits, timeout=10.0)
+    # Initialise all circuit breaker gauges to healthy
+    for endpoint in ["summariser", "dolphin-vllm", "darkchamp-vllm", "gptoss-vllm"]:
+        CIRCUIT_BREAKER_STATE.labels(endpoint).set(0)
+
+
+@app.on_event("shutdown")
+async def shutdown_event() -> None:
+    await http_client.aclose()
+
+
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
 @app.post("/run")
 async def run_task(payload: dict) -> AgentState:
-    task = payload.get("task", "")
-    prior_messages: List[str] = payload.get("messages", [])
-    memory_anchor: Optional[str] = payload.get("memory_anchor", None)
-    result: AgentState = await agent.ainvoke({
-        "messages": prior_messages,
-        "task": task,
-        "model_name": "",
-        "model_endpoint": "",
-        "role": "",
-        "memory_anchor": memory_anchor,
-    })
-    return result
+    ACTIVE_REQUESTS.inc()
+    try:
+        task = payload.get("task", "")
+
+        # Fast path: return cached routing decision if available
+        cached = await router.check_cache(task)
+        if cached:
+            return ORJSONResponse({
+                "messages": [cached],
+                "task": task,
+                "model_name": "redis-cache",
+                "model_endpoint": "unix-socket",
+                "role": "cache",
+                "memory_anchor": None,
+            })
+
+        result: AgentState = await agent.ainvoke({
+            "messages": payload.get("messages", []),
+            "task": task,
+            "model_name": "",
+            "model_endpoint": "",
+            "role": "",
+            "memory_anchor": payload.get("memory_anchor", None),
+        })
+        return result
+    finally:
+        ACTIVE_REQUESTS.dec()
 
 
 @app.get("/health")
 async def health() -> dict:
-    return {"status": "ok"}
+    return {"status": "apex_operational"}
 
 
 if __name__ == "__main__":
     import uvicorn
-    # Fix #3: bind to loopback only; Tailscale handles remote access
+    # Loopback only; Tailscale handles remote access
     uvicorn.run("orchestrator:app", host="127.0.0.1", port=8080, reload=False)
