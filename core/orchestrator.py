@@ -1,10 +1,19 @@
 """
-NCore Genesis vFinal - Orchestrator (Singularity Layer)
+NCore Genesis vFinal — Orchestrator (QC-v2)
 
-Changes in this revision:
-  - set_cache() called after successful ainvoke() so Redis UDS cache warms.
-  - All prior Singularity fixes retained (uvloop, orjson, loopback bind,
-    _summarise never re-raises, circuit-breaker gauge .set() semantics).
+QC-v2 changes:
+  - startup_event now calls await router.connect_cache() so the Redis
+    UDS socket is opened inside the running event loop (not at import).
+  - shutdown_event now calls await router.disconnect_cache() for
+    graceful FD cleanup on uvicorn Restart=always cycles.
+  - Circuit-breaker labels updated to match QC-v2 registry endpoint names.
+
+Prior fixes retained:
+  - uvloop.install() at interpreter level.
+  - orjson ORJSONResponse default.
+  - set_cache() write-back after ainvoke().
+  - _summarise() never re-raises.
+  - ACTIVE_REQUESTS.dec() in finally block.
 """
 import os
 import uvloop
@@ -27,7 +36,6 @@ from metrics import (
     CIRCUIT_BREAKER_STATE,
 )
 
-# Enforce Cython uvloop at interpreter level
 uvloop.install()
 
 # ---------------------------------------------------------------------------
@@ -53,7 +61,7 @@ class AgentState(TypedDict):
 
 
 # ---------------------------------------------------------------------------
-# Router
+# Router (cache is None until startup_event calls connect_cache)
 # ---------------------------------------------------------------------------
 registry = NCoreModelRegistry()
 router   = AthenaMoERouter(registry)
@@ -67,10 +75,6 @@ def _needs_summarisation(state: AgentState) -> bool:
 
 
 async def _summarise(messages: List[str]) -> str:
-    """
-    Always returns a string; never re-raises so summarise_node
-    except clause is always reachable and the graph never crashes.
-    """
     prompt = (
         "Summarise this agent trace into ONE short paragraph "
         "capturing all tactical routing decisions:\n\n"
@@ -142,7 +146,7 @@ agent = graph.compile()
 # App
 # ---------------------------------------------------------------------------
 app = FastAPI(
-    title="NCore MoE Orchestrator Singularity",
+    title="NCore MoE Orchestrator QC-v2",
     default_response_class=ORJSONResponse,
 )
 app.mount("/metrics", make_asgi_app())
@@ -154,12 +158,17 @@ async def startup_event() -> None:
     mark_event_loop_thread()
     limits = httpx.Limits(max_keepalive_connections=500, max_connections=1000)
     http_client = httpx.AsyncClient(limits=limits, timeout=10.0)
-    for ep in ["summariser", "dolphin-vllm", "darkchamp-vllm", "gptoss-vllm"]:
+    # QC-v2: open Redis UDS inside the running event loop, verify with ping
+    await router.connect_cache()
+    # Labels match QC-v2 registry endpoint names
+    for ep in ["summariser", "tactical-vllm", "darkchamp-vllm", "gptoss-vllm"]:
         CIRCUIT_BREAKER_STATE.labels(ep).set(0)
 
 
 @app.on_event("shutdown")
 async def shutdown_event() -> None:
+    # QC-v2: graceful teardown of both sockets — no FD orphans
+    await router.disconnect_cache()
     await http_client.aclose()
 
 
@@ -189,9 +198,7 @@ async def run_task(payload: dict) -> AgentState:
             "memory_anchor": payload.get("memory_anchor", None),
         })
 
-        # Write routing decision into Redis UDS cache for future fast-path
         await router.set_cache(task, result["model_name"])
-
         return result
     finally:
         ACTIVE_REQUESTS.dec()

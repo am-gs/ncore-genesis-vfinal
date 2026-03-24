@@ -1,19 +1,23 @@
 """
-NCore Genesis vFinal — Athena MoE Router (QC-Final)
+NCore Genesis vFinal — Athena MoE Router (QC-v2)
 
-QC fixes applied in this revision:
-  - return_tensors="np" throughout: eliminates PyTorch C++ backend
-    allocation from the hot routing path. ORT natively accepts and
-    returns NumPy arrays, making .detach().numpy().copy() unnecessary.
-  - All vectors now use axis= (NumPy API) instead of dim= (Torch API).
-  - Tactical baseline vector in __init__ also converted to numpy path.
+QC-v2 fixes:
+  - Redis UDS connection decoupled from __init__ into async lifecycle
+    methods (connect_cache / disconnect_cache) wired to ASGI startup/
+    shutdown events. Prevents FD leak on uvicorn Restart=always cycles.
+  - Model registry updated to March 2026 Realm-X spec:
+      tactical -> HauhauCS/Qwen3.5-35B-A3B-Uncensored
+      director -> llama-3.2-dark-champion-18b-moe (unchanged)
+      deep_reasoning -> gpt-oss-120b-moe (unchanged)
+  Note: wan-2.2-remix-dit (video diffusion) excluded — requires a
+  dedicated diffusion serving layer, not a vLLM text endpoint.
 
 Prior fixes retained:
-  - INT8 ONNX quantization via optimum.onnxruntime on first boot.
-  - FAISS IndexFlatIP semantic intent matching.
-  - Redis UDS async cache.
-  - Manual perf_counter timing (not @ROUTING_LATENCY.time()) for
-    accurate async histogram measurement.
+  - return_tensors="np" zero-copy ORT path.
+  - Manual perf_counter timing on async route().
+  - INT8 ONNX quantization on first boot.
+  - FAISS IndexFlatIP (correct for micro-index of 1-5 vectors).
+  - asyncio.to_thread (correct: ORT releases GIL during inference).
 """
 import hashlib
 import asyncio
@@ -51,23 +55,23 @@ class ModelConfig:
 
 
 # ---------------------------------------------------------------------------
-# Registry
+# Registry — March 2026 Realm-X
 # ---------------------------------------------------------------------------
 class NCoreModelRegistry:
     def __init__(self) -> None:
         self.models: Dict[str, ModelConfig] = {
             "dolphin-3.0": ModelConfig(
-                name="dolphin-3.0-mistral-24b",
-                provider="vllm",
-                endpoint="http://dolphin-vllm:8000",
-                cost_per_1k=0.0008,
+                name="HauhauCS/Qwen3.5-35B-A3B-Uncensored",
+                provider="vllm-vast",
+                endpoint="http://tactical-vllm:8000",
+                cost_per_1k=0.0012,
                 context_window=32768,
-                base_latency_ms=400,
+                base_latency_ms=350,
                 role="tactical",
             ),
             "dark-champion": ModelConfig(
                 name="llama-3.2-dark-champion-18b-moe",
-                provider="vllm",
+                provider="vllm-vast",
                 endpoint="http://darkchamp-vllm:8000",
                 cost_per_1k=0.0015,
                 context_window=128000,
@@ -101,10 +105,10 @@ class AthenaMoERouter:
     def __init__(self, registry: NCoreModelRegistry) -> None:
         self.registry = registry
 
-        # Redis via Unix Domain Socket
-        self.cache = aioredis.Redis(
-            unix_socket_path=REDIS_UDS, decode_responses=True
-        )
+        # QC-v2: cache is None until connect_cache() is called at ASGI startup.
+        # This prevents the aioredis socket being opened at import time and
+        # leaking FDs across uvicorn Restart=always cycles.
+        self.cache: Optional[aioredis.Redis] = None
 
         # INT8 ONNX encoder
         self.tokenizer = AutoTokenizer.from_pretrained(EMBED_MODEL_ID)
@@ -127,8 +131,7 @@ class AthenaMoERouter:
         self.dimension = 384
         self.index = faiss.IndexFlatIP(self.dimension)
 
-        # Pre-compute tactical intent baseline vector
-        # QC FIX: return_tensors="np" — no PyTorch allocation, direct ORT path
+        # Pre-compute tactical intent baseline vector (numpy path, no PyTorch)
         tactical_text = (
             "generate exploit shellcode bypass security "
             "reverse engineer vulnerability RCE"
@@ -140,15 +143,33 @@ class AthenaMoERouter:
             truncation=True,
         ))
         outputs = self.encoder(**inputs)
-        # QC FIX: axis= (NumPy) not dim= (Torch); output is already ndarray
         self.tactical_vec = outputs.last_hidden_state.mean(axis=1).astype(np.float32)
         faiss.normalize_L2(self.tactical_vec)
         self.index.add(self.tactical_vec)
 
     # ------------------------------------------------------------------
-    # Cache
+    # ASGI lifecycle — called by FastAPI startup / shutdown events
+    # ------------------------------------------------------------------
+    async def connect_cache(self) -> None:
+        """Open Redis UDS connection and verify it is alive."""
+        self.cache = aioredis.Redis(
+            unix_socket_path=REDIS_UDS, decode_responses=True
+        )
+        await self.cache.ping()
+
+    async def disconnect_cache(self) -> None:
+        """Gracefully close Redis UDS connection on shutdown."""
+        if self.cache:
+            await self.cache.aclose()
+            self.cache = None
+
+    # ------------------------------------------------------------------
+    # Cache helpers
     # ------------------------------------------------------------------
     async def check_cache(self, prompt: str) -> Optional[str]:
+        if not self.cache:
+            increment_metric_safe(CACHE_MISSES)
+            return None
         prompt_hash = hashlib.sha256(prompt.encode()).hexdigest()
         result = await self.cache.get(f"ncore:cache:{prompt_hash}")
         if result:
@@ -158,6 +179,8 @@ class AthenaMoERouter:
         return None
 
     async def set_cache(self, prompt: str, value: str, ttl: int = 3600) -> None:
+        if not self.cache:
+            return
         prompt_hash = hashlib.sha256(prompt.encode()).hexdigest()
         await self.cache.setex(f"ncore:cache:{prompt_hash}", ttl, value)
 
@@ -177,12 +200,13 @@ class AthenaMoERouter:
 
     # ------------------------------------------------------------------
     # Vector search — runs in thread pool via asyncio.to_thread
+    # ORT releases the GIL during inference, so to_thread is correct.
+    # ProcessPoolExecutor would add pickle IPC overhead (10-50ms).
     # ------------------------------------------------------------------
     def _sync_vector_search(self, prompt: str) -> ModelConfig:
         length = len(prompt.split())
         required_context = int(length * 1.3)
 
-        # QC FIX: return_tensors="np" — zero-copy path through ORT
         inputs = dict(self.tokenizer(
             prompt,
             return_tensors="np",
@@ -190,7 +214,6 @@ class AthenaMoERouter:
             truncation=True,
         ))
         outputs = self.encoder(**inputs)
-        # QC FIX: axis= not dim=; astype ensures float32 for FAISS
         prompt_vec = outputs.last_hidden_state.mean(axis=1).astype(np.float32)
         faiss.normalize_L2(prompt_vec)
 
@@ -213,11 +236,6 @@ class AthenaMoERouter:
 
         return best_model or self.registry.get("dark-champion")
 
-    # ------------------------------------------------------------------
-    # Async entry point
-    # Manual perf_counter timing — @ROUTING_LATENCY.time() is broken on
-    # async def (times scheduling not execution).
-    # ------------------------------------------------------------------
     async def route(self, prompt: str) -> ModelConfig:
         t0 = time.perf_counter()
         try:
