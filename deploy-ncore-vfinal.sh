@@ -1,6 +1,7 @@
 #!/bin/bash
 # NCore Genesis vFinal — Singularity Deploy Script
-# Fully synced with INT8 ONNX router, uvloop, orjson, Redis UDS cache.
+# QC-Final: xdpdrv w/ xdpgeneric fallback, CPUAffinity=2, OMP pins,
+#           SupplementaryGroups=redis, MALLOC_CONF jemalloc tuning.
 # Target: Oracle VM (Ubuntu 22.04+, x86_64 or ARM64)
 set -euo pipefail
 
@@ -8,7 +9,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export NCORE_DIR="${NCORE_DIR:-$SCRIPT_DIR}"
 
 echo "================================================================"
-echo "  NCore Genesis vFinal — Singularity Deployment"
+echo "  NCore Genesis vFinal — QC-Final Deployment"
 echo "================================================================"
 
 # --- Phase 0: Base packages & Docker repo ---
@@ -94,6 +95,9 @@ EOF
 gcc -shared -fPIC "$NCORE_DIR/libs/force_nodelay.c" -o "$NCORE_DIR/libs/force_nodelay.so" -ldl
 
 # --- Phase 3: eBPF/XDP firewall ---
+# QC FIX: attempt xdpdrv (native, pre-skb-allocation) first;
+# fall back to xdpgeneric only if the NIC driver does not support native XDP
+# (common on cloud virtio NICs such as Oracle VMs).
 cat > "$NCORE_DIR/libs/xdp_stealth.c" <<'EOF'
 #include <linux/bpf.h>
 #include <linux/if_ether.h>
@@ -125,10 +129,23 @@ int xdp_drop_unauthorized(struct xdp_md *ctx) {
 char _license[] SEC("license") = "GPL";
 EOF
 clang -O2 -target bpf -c "$NCORE_DIR/libs/xdp_stealth.c" -o "$NCORE_DIR/libs/xdp_stealth.o"
+
 PRIMARY_IFACE=$(ip route | awk '/default/ {print $5; exit}')
-[ -n "$PRIMARY_IFACE" ] && \
-  sudo ip link set dev "$PRIMARY_IFACE" xdpgeneric \
-    obj "$NCORE_DIR/libs/xdp_stealth.o" sec xdp_stealth || true
+if [ -n "$PRIMARY_IFACE" ]; then
+  # Strip any existing XDP program first
+  sudo ip link set dev "$PRIMARY_IFACE" xdpgeneric off 2>/dev/null || true
+  sudo ip link set dev "$PRIMARY_IFACE" xdpdrv    off 2>/dev/null || true
+
+  # Try native (pre-skb-allocation) first, fall back to generic
+  if sudo ip link set dev "$PRIMARY_IFACE" xdpdrv \
+       obj "$NCORE_DIR/libs/xdp_stealth.o" sec xdp_stealth 2>/dev/null; then
+    echo "[OK] XDP attached: xdpdrv (native) on $PRIMARY_IFACE"
+  else
+    sudo ip link set dev "$PRIMARY_IFACE" xdpgeneric \
+      obj "$NCORE_DIR/libs/xdp_stealth.o" sec xdp_stealth || true
+    echo "[WARN] xdpdrv unsupported on $PRIMARY_IFACE NIC driver, using xdpgeneric"
+  fi
+fi
 
 # --- Phase 4: Node + OpenClaw + uv/openshell ---
 [ ! -d "$HOME/.nvm" ] && \
@@ -142,7 +159,6 @@ export PATH="$HOME/.local/bin:$PATH"
 uv tool install -U openshell
 
 # --- Phase 4.5: Redis Unix Domain Socket ---
-# Athena MoE router connects via UDS to eliminate loopback TCP overhead.
 sudo mkdir -p /var/run/redis
 sudo chown redis:redis /var/run/redis
 if ! grep -q '^unixsocket /var/run/redis/redis-server.sock' /etc/redis/redis.conf; then
@@ -151,7 +167,6 @@ if ! grep -q '^unixsocket /var/run/redis/redis-server.sock' /etc/redis/redis.con
 fi
 sudo usermod -aG redis "$USER" || true
 sudo systemctl restart redis-server
-# Verify socket created (10s timeout)
 for i in $(seq 1 10); do
   [ -S /var/run/redis/redis-server.sock ] && break
   sleep 1
@@ -168,7 +183,6 @@ python3 -m venv "$NCORE_DIR/core/venv"
 "$NCORE_DIR/core/venv/bin/pip" install -r "$NCORE_DIR/core/requirements.txt"
 
 # --- Phase 5.5: Critical import verification ---
-# Fail fast here rather than in a systemd crash loop.
 "$NCORE_DIR/core/venv/bin/python" - <<'PYEOF'
 try:
     import uvloop, orjson, numpy, faiss, httpx, redis
@@ -186,6 +200,7 @@ echo "[NOTE] Run: sudo tailscale up --authkey=YOUR_KEY --ssh"
 # --- Phase 7: systemd gateway ---
 NODE_VERSION=$(node -v | cut -c2-)
 SERVICE_PATH="$HOME/.local/bin:$HOME/.nvm/versions/node/v${NODE_VERSION}/bin:$NCORE_DIR/core/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
 JEMALLOC_PATH=$(find \
   /usr/lib/aarch64-linux-gnu \
   /usr/lib/x86_64-linux-gnu \
@@ -199,18 +214,27 @@ fi
 
 sudo tee /etc/systemd/system/ncore-gateway.service > /dev/null <<EOF
 [Unit]
-Description=NCore Genesis vFinal - Singularity Gateway
+Description=NCore Genesis vFinal - QC-Final Gateway
 After=network.target docker.service redis-server.service
 Requires=redis-server.service
 
 [Service]
 Type=simple
 User=$USER
+# QC FIX: explicit redis group membership so UDS socket is always readable
+SupplementaryGroups=redis
 Environment="PATH=$SERVICE_PATH"
 Environment="NODE_OPTIONS=--max-old-space-size=16384"
 Environment="UV_USE_IO_URING=1"
 Environment="LD_PRELOAD=$PRELOAD_STRING"
 Environment="NCORE_REDIS_UDS=/var/run/redis/redis-server.sock"
+# QC FIX: jemalloc background decay tuning — reduces RSS spikes under load
+Environment="MALLOC_CONF=background_thread:true,metadata_thp:auto,dirty_decay_ms:50,muzzy_decay_ms:50"
+# QC FIX: pin ONNX Runtime and OpenBLAS thread pools to exactly one thread
+# so they don't compete with the event loop on the pinned core
+Environment="OMP_NUM_THREADS=1"
+Environment="OPENBLAS_NUM_THREADS=1"
+Environment="MKL_NUM_THREADS=1"
 WorkingDirectory=$NCORE_DIR/core
 ExecStart=$NCORE_DIR/core/venv/bin/python -m uvicorn orchestrator:app --host 127.0.0.1 --port 8080
 Restart=always
@@ -220,7 +244,10 @@ LimitMEMLOCK=infinity
 OOMScoreAdjust=-1000
 CPUSchedulingPolicy=fifo
 CPUSchedulingPriority=99
-CPUAffinity=2 3
+# QC FIX: single core pin for L1/L2 cache locality on the event loop;
+# OMP/OpenBLAS/MKL are already restricted to 1 thread above so no
+# internal thread pool is silently pinned to the same core.
+CPUAffinity=2
 
 [Install]
 WantedBy=multi-user.target
@@ -230,7 +257,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now ncore-gateway
 
 echo "================================================================"
-echo " NCore Genesis vFinal - Singularity Layer deployed."
+echo " NCore Genesis vFinal - QC-Final Singularity Layer deployed."
 echo "  Gateway : http://127.0.0.1:8080"
 echo "  Metrics : http://127.0.0.1:8080/metrics"
 echo "  Health  : http://127.0.0.1:8080/health"

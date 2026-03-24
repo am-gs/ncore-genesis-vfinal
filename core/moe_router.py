@@ -1,16 +1,19 @@
 """
-NCore Genesis vFinal — Athena MoE Router (Singularity Layer)
+NCore Genesis vFinal — Athena MoE Router (QC-Final)
 
-Upgrades vs. previous version:
-  - INT8 dynamic quantization via optimum.onnxruntime on first boot
-  - FAISS IndexFlatIP for semantic intent matching
-  - Redis cache over Unix Domain Socket (/var/run/redis/redis-server.sock)
-  - Per-model cost/latency scoring function
+QC fixes applied in this revision:
+  - return_tensors="np" throughout: eliminates PyTorch C++ backend
+    allocation from the hot routing path. ORT natively accepts and
+    returns NumPy arrays, making .detach().numpy().copy() unnecessary.
+  - All vectors now use axis= (NumPy API) instead of dim= (Torch API).
+  - Tactical baseline vector in __init__ also converted to numpy path.
 
-Bug fixed vs. submitted code:
-  @ROUTING_LATENCY.time() on an async def only times the scheduling of the
-  coroutine, NOT the awaited execution. Replaced with manual perf_counter
-  timing around the awaited thread call so the histogram is accurate.
+Prior fixes retained:
+  - INT8 ONNX quantization via optimum.onnxruntime on first boot.
+  - FAISS IndexFlatIP semantic intent matching.
+  - Redis UDS async cache.
+  - Manual perf_counter timing (not @ROUTING_LATENCY.time()) for
+    accurate async histogram measurement.
 """
 import hashlib
 import asyncio
@@ -89,23 +92,21 @@ class NCoreModelRegistry:
 # ---------------------------------------------------------------------------
 # Router
 # ---------------------------------------------------------------------------
-QUANTIZED_DIR = os.getenv("NCORE_QUANTIZED_DIR", "/tmp/ncore_quantized")
-REDIS_UDS = os.getenv("NCORE_REDIS_UDS", "/var/run/redis/redis-server.sock")
-EMBED_MODEL_ID = os.getenv(
-    "NCORE_EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2"
-)
+QUANTIZED_DIR  = os.getenv("NCORE_QUANTIZED_DIR", "/tmp/ncore_quantized")
+REDIS_UDS      = os.getenv("NCORE_REDIS_UDS",     "/var/run/redis/redis-server.sock")
+EMBED_MODEL_ID = os.getenv("NCORE_EMBED_MODEL",   "sentence-transformers/all-MiniLM-L6-v2")
 
 
 class AthenaMoERouter:
     def __init__(self, registry: NCoreModelRegistry) -> None:
         self.registry = registry
 
-        # Redis via Unix Domain Socket for zero-latency cache lookup
+        # Redis via Unix Domain Socket
         self.cache = aioredis.Redis(
             unix_socket_path=REDIS_UDS, decode_responses=True
         )
 
-        # ---- INT8 ONNX encoder (compile on first boot, reload on subsequent) ----
+        # INT8 ONNX encoder
         self.tokenizer = AutoTokenizer.from_pretrained(EMBED_MODEL_ID)
 
         if not os.path.exists(QUANTIZED_DIR):
@@ -121,28 +122,26 @@ class AthenaMoERouter:
                 save_dir=QUANTIZED_DIR, quantization_config=dqconfig
             )
 
-        self.encoder = ORTModelForFeatureExtraction.from_pretrained(
-            QUANTIZED_DIR
-        )
+        self.encoder = ORTModelForFeatureExtraction.from_pretrained(QUANTIZED_DIR)
 
         self.dimension = 384
         self.index = faiss.IndexFlatIP(self.dimension)
 
         # Pre-compute tactical intent baseline vector
+        # QC FIX: return_tensors="np" — no PyTorch allocation, direct ORT path
         tactical_text = (
             "generate exploit shellcode bypass security "
             "reverse engineer vulnerability RCE"
         )
-        inputs = self.tokenizer(
+        inputs = dict(self.tokenizer(
             tactical_text,
-            return_tensors="pt",
+            return_tensors="np",
             padding=True,
             truncation=True,
-        )
+        ))
         outputs = self.encoder(**inputs)
-        self.tactical_vec = (
-            outputs.last_hidden_state.mean(dim=1).detach().numpy()
-        )
+        # QC FIX: axis= (NumPy) not dim= (Torch); output is already ndarray
+        self.tactical_vec = outputs.last_hidden_state.mean(axis=1).astype(np.float32)
         faiss.normalize_L2(self.tactical_vec)
         self.index.add(self.tactical_vec)
 
@@ -177,19 +176,22 @@ class AthenaMoERouter:
         )
 
     # ------------------------------------------------------------------
-    # Vector search (CPU-bound — runs in thread pool via asyncio.to_thread)
+    # Vector search — runs in thread pool via asyncio.to_thread
     # ------------------------------------------------------------------
     def _sync_vector_search(self, prompt: str) -> ModelConfig:
         length = len(prompt.split())
         required_context = int(length * 1.3)
 
-        inputs = self.tokenizer(
-            prompt, return_tensors="pt", padding=True, truncation=True
-        )
+        # QC FIX: return_tensors="np" — zero-copy path through ORT
+        inputs = dict(self.tokenizer(
+            prompt,
+            return_tensors="np",
+            padding=True,
+            truncation=True,
+        ))
         outputs = self.encoder(**inputs)
-        prompt_vec = (
-            outputs.last_hidden_state.mean(dim=1).detach().numpy().copy()
-        )
+        # QC FIX: axis= not dim=; astype ensures float32 for FAISS
+        prompt_vec = outputs.last_hidden_state.mean(axis=1).astype(np.float32)
         faiss.normalize_L2(prompt_vec)
 
         distances, _ = self.index.search(prompt_vec, 1)
@@ -212,10 +214,9 @@ class AthenaMoERouter:
         return best_model or self.registry.get("dark-champion")
 
     # ------------------------------------------------------------------
-    # Async route entry point
-    # Bug fix: manual perf_counter timing around the awaited thread call
-    # so ROUTING_LATENCY histogram captures real wall-clock duration.
-    # Using @ROUTING_LATENCY.time() on async def only times scheduling.
+    # Async entry point
+    # Manual perf_counter timing — @ROUTING_LATENCY.time() is broken on
+    # async def (times scheduling not execution).
     # ------------------------------------------------------------------
     async def route(self, prompt: str) -> ModelConfig:
         t0 = time.perf_counter()
