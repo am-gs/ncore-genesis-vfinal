@@ -1,11 +1,34 @@
+# NCore Genesis vFinal — Python dependencies
+
+# ASGI / web
 fastapi
 uvicorn[standard]
+orjson
+uvloop
+
+# Agent orchestration
 langgraph
-sentence-transformers
+
+# INT8 ONNX embedding engine
+optimum[onnxruntime]
+transformers
+numpy
+
+# Vector search
 faiss-cpu
+
+# HTTP client
 httpx
+
+# Environment / config
 python-dotenv
-redis
+
+# Redis (async + sync)
+redis[hiredis]
+
+# Observability
 prometheus-client
 structlog
+
+# Retry / resilience
 tenacity
