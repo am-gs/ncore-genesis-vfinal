@@ -2,6 +2,7 @@
 # NCore Genesis vFinal — Singularity Deploy Script
 # QC-Final: xdpdrv w/ xdpgeneric fallback, CPUAffinity=2, OMP pins,
 #           SupplementaryGroups=redis, MALLOC_CONF jemalloc tuning.
+#           guarded IPPROTO_TCP define, force-source openshell build.
 # Target: Oracle VM (Ubuntu 22.04+, x86_64 or ARM64)
 set -euo pipefail
 
@@ -95,10 +96,13 @@ EOF
 gcc -shared -fPIC "$NCORE_DIR/libs/force_nodelay.c" -o "$NCORE_DIR/libs/force_nodelay.so" -ldl
 
 # --- Phase 3: eBPF/XDP firewall ---
-# QC FIX: attempt xdpdrv (native, pre-skb-allocation) first;
-# fall back to xdpgeneric only if the NIC driver does not support native XDP
-# (common on cloud virtio NICs such as Oracle VMs).
+# FIX: #ifndef guard prevents redefinition error if linux/tcp.h already
+# defines IPPROTO_TCP (which it does on most kernels). A bare #define
+# would cause a clang BPF compilation failure.
 cat > "$NCORE_DIR/libs/xdp_stealth.c" <<'EOF'
+#ifndef IPPROTO_TCP
+#define IPPROTO_TCP 6
+#endif
 #include <linux/bpf.h>
 #include <linux/if_ether.h>
 #include <linux/ip.h>
@@ -132,11 +136,8 @@ clang -O2 -target bpf -c "$NCORE_DIR/libs/xdp_stealth.c" -o "$NCORE_DIR/libs/xdp
 
 PRIMARY_IFACE=$(ip route | awk '/default/ {print $5; exit}')
 if [ -n "$PRIMARY_IFACE" ]; then
-  # Strip any existing XDP program first
   sudo ip link set dev "$PRIMARY_IFACE" xdpgeneric off 2>/dev/null || true
   sudo ip link set dev "$PRIMARY_IFACE" xdpdrv    off 2>/dev/null || true
-
-  # Try native (pre-skb-allocation) first, fall back to generic
   if sudo ip link set dev "$PRIMARY_IFACE" xdpdrv \
        obj "$NCORE_DIR/libs/xdp_stealth.o" sec xdp_stealth 2>/dev/null; then
     echo "[OK] XDP attached: xdpdrv (native) on $PRIMARY_IFACE"
@@ -147,7 +148,7 @@ if [ -n "$PRIMARY_IFACE" ]; then
   fi
 fi
 
-# --- Phase 4: Node + OpenClaw + uv/openshell ---
+# --- Phase 4: Node + OpenClaw + uv ---
 [ ! -d "$HOME/.nvm" ] && \
   curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.4/install.sh | bash
 export NVM_DIR="$HOME/.nvm"
@@ -156,7 +157,6 @@ nvm install 22 && nvm use 22
 npm install -g pnpm openclaw@latest
 curl -LsSf https://astral.sh/uv/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
-uv tool install -U openshell
 
 # --- Phase 4.5: Redis Unix Domain Socket ---
 sudo mkdir -p /var/run/redis
@@ -181,6 +181,9 @@ echo "[OK] Redis UDS ready: /var/run/redis/redis-server.sock"
 python3 -m venv "$NCORE_DIR/core/venv"
 "$NCORE_DIR/core/venv/bin/pip" install --upgrade pip wheel setuptools
 "$NCORE_DIR/core/venv/bin/pip" install -r "$NCORE_DIR/core/requirements.txt"
+# FIX: force source compilation of openshell to ensure C extensions are
+# built for this exact kernel/arch rather than using a pre-built wheel.
+"$NCORE_DIR/core/venv/bin/pip" install openshell --no-binary openshell
 
 # --- Phase 5.5: Critical import verification ---
 "$NCORE_DIR/core/venv/bin/python" - <<'PYEOF'
@@ -221,17 +224,13 @@ Requires=redis-server.service
 [Service]
 Type=simple
 User=$USER
-# QC FIX: explicit redis group membership so UDS socket is always readable
 SupplementaryGroups=redis
 Environment="PATH=$SERVICE_PATH"
 Environment="NODE_OPTIONS=--max-old-space-size=16384"
 Environment="UV_USE_IO_URING=1"
 Environment="LD_PRELOAD=$PRELOAD_STRING"
 Environment="NCORE_REDIS_UDS=/var/run/redis/redis-server.sock"
-# QC FIX: jemalloc background decay tuning — reduces RSS spikes under load
 Environment="MALLOC_CONF=background_thread:true,metadata_thp:auto,dirty_decay_ms:50,muzzy_decay_ms:50"
-# QC FIX: pin ONNX Runtime and OpenBLAS thread pools to exactly one thread
-# so they don't compete with the event loop on the pinned core
 Environment="OMP_NUM_THREADS=1"
 Environment="OPENBLAS_NUM_THREADS=1"
 Environment="MKL_NUM_THREADS=1"
@@ -244,9 +243,6 @@ LimitMEMLOCK=infinity
 OOMScoreAdjust=-1000
 CPUSchedulingPolicy=fifo
 CPUSchedulingPriority=99
-# QC FIX: single core pin for L1/L2 cache locality on the event loop;
-# OMP/OpenBLAS/MKL are already restricted to 1 thread above so no
-# internal thread pool is silently pinned to the same core.
 CPUAffinity=2
 
 [Install]
