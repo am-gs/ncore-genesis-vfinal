@@ -1,108 +1,102 @@
 """
-NCore Genesis vFinal — Singularity Prometheus Metrics
+NCore Genesis vFinal — Prometheus metrics + helpers
 
-Fix applied vs. submitted code:
-  call_soon() used when already on the event loop thread;
-  call_soon_threadsafe() reserved for cross-thread callers only.
-  mark_event_loop_thread() must be called once from the ASGI startup event.
+All Prometheus objects are defined here so that both moe_router.py and
+orchestrator.py import from a single source of truth.
+
+increment_metric_safe() swallows any exception so a metrics failure
+never takes down the hot path.
+
+mark_event_loop_thread() tags the current thread so uvloop can be
+verified as the active loop implementation at startup.
 """
-import asyncio
 import threading
+import asyncio
+from typing import Optional
 
-from prometheus_client import (
-    Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
-)
+from prometheus_client import Counter, Histogram, Gauge
 
 # ---------------------------------------------------------------------------
-# Instruments
+# Counters
 # ---------------------------------------------------------------------------
 TASKS_TOTAL = Counter(
     "ncore_tasks_total",
-    "Total tasks received by the orchestrator",
+    "Total routed tasks",
     ["model", "role"],
-)
-
-ROUTING_LATENCY = Histogram(
-    "ncore_routing_latency_seconds",
-    "Time spent in the INT8 vector search path",
-    buckets=[0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0],
-)
-
-SUMMARISATION_TOTAL = Counter(
-    "ncore_summarisation_total",
-    "Number of times the sliding-window summariser fired",
-)
-
-SUMMARISATION_ERRORS = Counter(
-    "ncore_summarisation_errors_total",
-    "Number of times summarisation fell back to hard truncation",
 )
 
 CACHE_HITS = Counter(
     "ncore_cache_hits_total",
-    "Semantic cache hits (task hash matched Redis)",
+    "Redis cache hits",
 )
 
 CACHE_MISSES = Counter(
     "ncore_cache_misses_total",
-    "Semantic cache misses (full routing required)",
+    "Redis cache misses",
+)
+
+SUMMARISATION_TOTAL = Counter(
+    "ncore_summarisation_total",
+    "Times the summarisation node was triggered",
+)
+
+SUMMARISATION_ERRORS = Counter(
+    "ncore_summarisation_errors_total",
+    "Summarisation failures",
+)
+
+# ---------------------------------------------------------------------------
+# Histograms
+# ---------------------------------------------------------------------------
+ROUTING_LATENCY = Histogram(
+    "ncore_routing_latency_seconds",
+    "End-to-end latency of the MoE routing decision",
+    buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0),
+)
+
+# ---------------------------------------------------------------------------
+# Gauges
+# ---------------------------------------------------------------------------
+ACTIVE_REQUESTS = Gauge(
+    "ncore_active_requests",
+    "In-flight /run requests",
 )
 
 CIRCUIT_BREAKER_STATE = Gauge(
-    "ncore_circuit_breaker_open",
-    "1 if downstream endpoint circuit breaker is open, 0 otherwise",
+    "ncore_circuit_breaker_state",
+    "1 = open/tripped, 0 = closed/healthy",
     ["endpoint"],
 )
 
-ACTIVE_REQUESTS = Gauge(
-    "ncore_active_requests",
-    "Number of /run requests currently in-flight",
-)
-
 # ---------------------------------------------------------------------------
-# Event-loop thread registration
+# Thread-local event-loop marker
 # ---------------------------------------------------------------------------
-_EVENT_LOOP_THREAD_ID: int = 0
+_EVENT_LOOP_THREAD: Optional[int] = None
 
 
 def mark_event_loop_thread() -> None:
-    """
-    Record the OS thread ID of the uvloop worker.
-    Call exactly once from the FastAPI startup event.
-    """
-    global _EVENT_LOOP_THREAD_ID
-    _EVENT_LOOP_THREAD_ID = threading.get_ident()
+    """Call once from the ASGI startup handler to tag the event-loop thread."""
+    global _EVENT_LOOP_THREAD
+    _EVENT_LOOP_THREAD = threading.get_ident()
+    loop = asyncio.get_event_loop()
+    impl = type(loop).__name__
+    if "uvloop" not in impl.lower():
+        import warnings
+        warnings.warn(
+            f"[NCore] Expected uvloop event loop, got {impl}. "
+            "Check that uvloop.install() ran before uvicorn started."
+        )
 
 
 # ---------------------------------------------------------------------------
-# Asynchronous Metric Injection
+# Safe increment helper
 # ---------------------------------------------------------------------------
-def increment_metric_safe(metric, *label_args) -> None:
-    """
-    Fire-and-forget metric increment that never blocks the ASGI event loop.
-
-    Strategy:
-      - From within the event-loop thread  -> loop.call_soon()          (zero overhead)
-      - From a background/worker thread    -> loop.call_soon_threadsafe() (thread-safe wakeup)
-      - No running loop (startup / tests)  -> direct synchronous .inc()
-    """
+def increment_metric_safe(metric, *label_values) -> None:
+    """Increment a Counter (with optional labels) without ever raising."""
     try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        # No loop active — safe to increment synchronously
-        if label_args:
-            metric.labels(*label_args).inc()
+        if label_values:
+            metric.labels(*label_values).inc()
         else:
             metric.inc()
-        return
-
-    def _do_inc() -> None:
-        if label_args:
-            metric.labels(*label_args).inc()
-        else:
-            metric.inc()
-
-    if threading.get_ident() == _EVENT_LOOP_THREAD_ID:
-        loop.call_soon(_do_inc)
-    else:
-        loop.call_soon_threadsafe(_do_inc)
+    except Exception:
+        pass
