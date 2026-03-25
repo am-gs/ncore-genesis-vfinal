@@ -1,102 +1,40 @@
-"""
-NCore Genesis vFinal — Prometheus metrics + helpers
-
-All Prometheus objects are defined here so that both moe_router.py and
-orchestrator.py import from a single source of truth.
-
-increment_metric_safe() swallows any exception so a metrics failure
-never takes down the hot path.
-
-mark_event_loop_thread() tags the current thread so uvloop can be
-verified as the active loop implementation at startup.
-"""
-import threading
-import asyncio
-from typing import Optional
-
+"""NCore Genesis — Prometheus metrics (v3.0)"""
 from prometheus_client import Counter, Histogram, Gauge
 
-# ---------------------------------------------------------------------------
-# Counters
-# ---------------------------------------------------------------------------
-TASKS_TOTAL = Counter(
-    "ncore_tasks_total",
-    "Total routed tasks",
-    ["model", "role"],
+REQUEST_COUNTER = Counter(
+    "ncore_requests_total",
+    "Total requests handled"
 )
 
-CACHE_HITS = Counter(
-    "ncore_cache_hits_total",
-    "Redis cache hits",
+REQUEST_LATENCY = Histogram(
+    "ncore_request_latency_seconds",
+    "End-to-end request latency",
+    buckets=[0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0]
 )
 
-CACHE_MISSES = Counter(
-    "ncore_cache_misses_total",
-    "Redis cache misses",
+ROUTE_TIER_COUNTER = Counter(
+    "ncore_route_tier_total",
+    "Requests per routing tier",
+    labelnames=["tier"]
 )
 
-SUMMARISATION_TOTAL = Counter(
-    "ncore_summarisation_total",
-    "Times the summarisation node was triggered",
+COST_COUNTER = Counter(
+    "ncore_cost_usd_total",
+    "Cumulative cost in USD",
+    labelnames=["tier"]
 )
 
-SUMMARISATION_ERRORS = Counter(
-    "ncore_summarisation_errors_total",
-    "Summarisation failures",
+CACHE_HIT_RATE = Gauge(
+    "ncore_cache_hit_rate",
+    "SGLang RadixAttention cache hit rate (0-1)"
 )
 
-# ---------------------------------------------------------------------------
-# Histograms
-# ---------------------------------------------------------------------------
-ROUTING_LATENCY = Histogram(
-    "ncore_routing_latency_seconds",
-    "End-to-end latency of the MoE routing decision",
-    buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0),
+POD_ACTIVE = Gauge(
+    "ncore_vast_pods_active",
+    "Number of live Vast.ai pods"
 )
 
-# ---------------------------------------------------------------------------
-# Gauges
-# ---------------------------------------------------------------------------
-ACTIVE_REQUESTS = Gauge(
-    "ncore_active_requests",
-    "In-flight /run requests",
-)
 
-CIRCUIT_BREAKER_STATE = Gauge(
-    "ncore_circuit_breaker_state",
-    "1 = open/tripped, 0 = closed/healthy",
-    ["endpoint"],
-)
-
-# ---------------------------------------------------------------------------
-# Thread-local event-loop marker
-# ---------------------------------------------------------------------------
-_EVENT_LOOP_THREAD: Optional[int] = None
-
-
-def mark_event_loop_thread() -> None:
-    """Call once from the ASGI startup handler to tag the event-loop thread."""
-    global _EVENT_LOOP_THREAD
-    _EVENT_LOOP_THREAD = threading.get_ident()
-    loop = asyncio.get_event_loop()
-    impl = type(loop).__name__
-    if "uvloop" not in impl.lower():
-        import warnings
-        warnings.warn(
-            f"[NCore] Expected uvloop event loop, got {impl}. "
-            "Check that uvloop.install() ran before uvicorn started."
-        )
-
-
-# ---------------------------------------------------------------------------
-# Safe increment helper
-# ---------------------------------------------------------------------------
-def increment_metric_safe(metric, *label_values) -> None:
-    """Increment a Counter (with optional labels) without ever raising."""
-    try:
-        if label_values:
-            metric.labels(*label_values).inc()
-        else:
-            metric.inc()
-    except Exception:
-        pass
+def update_cost(tier: str, cost: float):
+    """Increment cost counter for a given tier."""
+    COST_COUNTER.labels(tier=tier).inc(cost)

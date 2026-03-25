@@ -1,214 +1,158 @@
+"""NCore Genesis — FastAPI + LangGraph Orchestrator v3.0
+
+Endpoints:
+  POST /run          → route + execute a task
+  GET  /health       → liveness check
+  GET  /metrics      → Prometheus metrics
+
+Router decision flows:
+  → POD tasks (image/video) go to DynamicPodProvisioner
+  → LLM tasks go to OpenRouter (Nemotron Nano/Super, Opus, Qwen Coder, Dolphin)
 """
-NCore Genesis vFinal — Orchestrator (QC-v2)
+from __future__ import annotations
+import os, json, time, logging
+from typing import Annotated, TypedDict
 
-QC-v2 changes:
-  - startup_event now calls await router.connect_cache() so the Redis
-    UDS socket is opened inside the running event loop (not at import).
-  - shutdown_event now calls await router.disconnect_cache() for
-    graceful FD cleanup on uvicorn Restart=always cycles.
-  - Circuit-breaker labels updated to match QC-v2 registry endpoint names.
-
-Prior fixes retained:
-  - uvloop.install() at interpreter level.
-  - orjson ORJSONResponse default.
-  - set_cache() write-back after ainvoke().
-  - _summarise() never re-raises.
-  - ACTIVE_REQUESTS.dec() in finally block.
-"""
-import os
-import uvloop
-import httpx
-from typing import TypedDict, List, Optional
-
-from fastapi import FastAPI
-from fastapi.responses import ORJSONResponse
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 from langgraph.graph import StateGraph, END
-from prometheus_client import make_asgi_app
+import httpx
 
-from moe_router import NCoreModelRegistry, AthenaMoERouter, ModelConfig
+from router import NCoreMasterRouter
+from pod_provisioner import DynamicPodProvisioner
 from metrics import (
-    mark_event_loop_thread,
-    increment_metric_safe,
-    TASKS_TOTAL,
-    SUMMARISATION_TOTAL,
-    SUMMARISATION_ERRORS,
-    ACTIVE_REQUESTS,
-    CIRCUIT_BREAKER_STATE,
+    REQUEST_COUNTER, REQUEST_LATENCY, ROUTE_TIER_COUNTER,
+    COST_COUNTER, update_cost
 )
 
-uvloop.install()
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger("ncore")
 
-# ---------------------------------------------------------------------------
-# Config
-# ---------------------------------------------------------------------------
-MAX_MESSAGES        = int(os.getenv("NCORE_MAX_MESSAGES",   "20"))
-SUMMARISE_KEEP      = int(os.getenv("NCORE_SUMMARISE_KEEP", "5"))
-SUMMARISER_ENDPOINT = os.getenv("NCORE_SUMMARISER_ENDPOINT", "http://127.0.0.1:11434/api/chat")
-SUMMARISER_MODEL    = os.getenv("NCORE_SUMMARISER_MODEL",    "gemma2:2b")
+app = FastAPI(title="NCore Genesis", version="3.0")
+ROUTER     = NCoreMasterRouter()
+PROVISIONER = DynamicPodProvisioner()
 
-http_client: Optional[httpx.AsyncClient] = None
+# ── State ────────────────────────────────────────────────────────────────────
 
-# ---------------------------------------------------------------------------
-# State
-# ---------------------------------------------------------------------------
 class AgentState(TypedDict):
-    messages:       List[str]
-    task:           str
-    model_name:     str
-    model_endpoint: str
-    role:           str
-    memory_anchor:  Optional[str]
+    task:      str
+    turns:     int
+    route:     dict
+    output:    str
+    cost_usd:  float
+    latency_s: float
+
+# ── LangGraph nodes ──────────────────────────────────────────────────────────
+
+def node_route(state: AgentState) -> AgentState:
+    decision = ROUTER.route(state["task"], state.get("turns", 0))
+    log.info(f"[ROUTE] tier={decision['tier']} model={decision['model']} "
+             f"engine={decision['engine']} reason={decision['reason']}")
+    ROUTE_TIER_COUNTER.labels(tier=decision["tier"]).inc()
+    return {**state, "route": decision}
 
 
-# ---------------------------------------------------------------------------
-# Router (cache is None until startup_event calls connect_cache)
-# ---------------------------------------------------------------------------
-registry = NCoreModelRegistry()
-router   = AthenaMoERouter(registry)
+def node_execute(state: AgentState) -> AgentState:
+    d = state["route"]
+    t0 = time.time()
 
+    # ── POD tasks ─────────────────────────────────────────────────────────
+    if d.get("requires_pod"):
+        spec   = d["pod_spec"]
+        result = PROVISIONER.run(spec["type"], state["task"])
+        latency = time.time() - t0
+        if result.success:
+            url    = result.output.get("video_url") or result.output.get("image_url", "")
+            output = f"✅ {spec['type'].title()} ready in {result.runtime_seconds:.0f}s\n🔗 {url}"
+        else:
+            output = f"❌ {spec['type'].title()} failed: {result.error}"
+        update_cost(d["tier"], result.cost_usd)
+        return {**state, "output": output, "cost_usd": result.cost_usd, "latency_s": latency}
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-def _needs_summarisation(state: AgentState) -> bool:
-    return len(state["messages"]) > MAX_MESSAGES
-
-
-async def _summarise(messages: List[str]) -> str:
-    prompt = (
-        "Summarise this agent trace into ONE short paragraph "
-        "capturing all tactical routing decisions:\n\n"
-        + "\n".join(messages)
+    # ── LLM tasks ─────────────────────────────────────────────────────────
+    api_key = (
+        os.environ.get("OPENROUTER_API_KEY", "")
+        if d["provider"] == "openrouter"
+        else os.environ.get("VAST_API_KEY", "")
     )
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "HTTP-Referer":  "https://ncore.internal",
+        "X-Title":       "NCore Genesis",
+    }
+    payload = {
+        "model": d["model"],
+        "messages": [{"role": "user", "content": state["task"]}],
+        "temperature": 0.1 if d["tier"] in ("nano", "coder") else 0.4,
+        "max_tokens": 8192,
+    }
     try:
-        r = await http_client.post(
-            SUMMARISER_ENDPOINT,
-            json={
-                "model":    SUMMARISER_MODEL,
-                "messages": [{"role": "user", "content": prompt}],
-                "stream":   False,
-            },
+        r = httpx.post(
+            f"{d['endpoint']}/chat/completions",
+            headers=headers, json=payload, timeout=120
         )
         r.raise_for_status()
-        CIRCUIT_BREAKER_STATE.labels("summariser").set(0)
-        return r.json()["message"]["content"].strip()
-    except Exception as exc:
-        CIRCUIT_BREAKER_STATE.labels("summariser").set(1)
-        increment_metric_safe(SUMMARISATION_ERRORS)
-        return "[summary unavailable: {}] ".format(exc) + " | ".join(messages[-3:])
+        output = r.json()["choices"][0]["message"]["content"]
+    except Exception as e:
+        output = f"[LLM error] {e}"
+
+    latency  = time.time() - t0
+    cost     = d["estimated_cost_usd"]
+    update_cost(d["tier"], cost)
+    return {**state, "output": output, "cost_usd": cost, "latency_s": latency}
 
 
-# ---------------------------------------------------------------------------
-# LangGraph nodes
-# ---------------------------------------------------------------------------
-async def route_node(state: AgentState) -> AgentState:
-    cfg: ModelConfig = await router.route(state["task"])
-    increment_metric_safe(TASKS_TOTAL, cfg.name, cfg.role)
-    state["model_name"]     = cfg.name
-    state["model_endpoint"] = cfg.endpoint
-    state["role"]           = cfg.role
-    state["messages"].append(
-        f"Routed to {cfg.name} ({cfg.role}) at {cfg.endpoint}"
-    )
-    return state
+# ── Graph ────────────────────────────────────────────────────────────────────
 
-
-async def summarise_node(state: AgentState) -> AgentState:
-    increment_metric_safe(SUMMARISATION_TOTAL)
-    older  = state["messages"][:-SUMMARISE_KEEP]
-    recent = state["messages"][-SUMMARISE_KEEP:]
-    anchor = await _summarise(older)
-    state["memory_anchor"] = anchor
-    state["messages"]      = [f"[MEMORY ANCHOR] {anchor}"] + recent
-    return state
-
-
-def should_summarise(state: AgentState) -> str:
-    return "summarise" if _needs_summarisation(state) else END
-
-
-# ---------------------------------------------------------------------------
-# Graph
-# ---------------------------------------------------------------------------
-graph = StateGraph(AgentState)
-graph.add_node("route",     route_node)
-graph.add_node("summarise", summarise_node)
+graph  = StateGraph(AgentState)
+graph.add_node("route",   node_route)
+graph.add_node("execute", node_execute)
 graph.set_entry_point("route")
-graph.add_conditional_edges(
-    "route",
-    should_summarise,
-    {"summarise": "summarise", END: END},
-)
-graph.add_edge("summarise", END)
-agent = graph.compile()
+graph.add_edge("route", "execute")
+graph.add_edge("execute", END)
+app_graph = graph.compile()
 
-# ---------------------------------------------------------------------------
-# App
-# ---------------------------------------------------------------------------
-app = FastAPI(
-    title="NCore MoE Orchestrator QC-v2",
-    default_response_class=ORJSONResponse,
-)
-app.mount("/metrics", make_asgi_app())
+# ── API ──────────────────────────────────────────────────────────────────────
 
-
-@app.on_event("startup")
-async def startup_event() -> None:
-    global http_client
-    mark_event_loop_thread()
-    limits = httpx.Limits(max_keepalive_connections=500, max_connections=1000)
-    http_client = httpx.AsyncClient(limits=limits, timeout=10.0)
-    # QC-v2: open Redis UDS inside the running event loop, verify with ping
-    await router.connect_cache()
-    # Labels match QC-v2 registry endpoint names
-    for ep in ["summariser", "tactical-vllm", "darkchamp-vllm", "gptoss-vllm"]:
-        CIRCUIT_BREAKER_STATE.labels(ep).set(0)
-
-
-@app.on_event("shutdown")
-async def shutdown_event() -> None:
-    # QC-v2: graceful teardown of both sockets — no FD orphans
-    await router.disconnect_cache()
-    await http_client.aclose()
+class RunRequest(BaseModel):
+    task:  str
+    turns: int = 0
 
 
 @app.post("/run")
-async def run_task(payload: dict) -> AgentState:
-    ACTIVE_REQUESTS.inc()
-    try:
-        task = payload.get("task", "")
-
-        cached = await router.check_cache(task)
-        if cached:
-            return ORJSONResponse({
-                "messages":       [cached],
-                "task":           task,
-                "model_name":     "redis-cache",
-                "model_endpoint": "unix-socket",
-                "role":           "cache",
-                "memory_anchor":  None,
-            })
-
-        result: AgentState = await agent.ainvoke({
-            "messages":      payload.get("messages", []),
-            "task":          task,
-            "model_name":    "",
-            "model_endpoint": "",
-            "role":          "",
-            "memory_anchor": payload.get("memory_anchor", None),
-        })
-
-        await router.set_cache(task, result["model_name"])
-        return result
-    finally:
-        ACTIVE_REQUESTS.dec()
+async def run(req: RunRequest):
+    with REQUEST_LATENCY.time():
+        REQUEST_COUNTER.inc()
+        init: AgentState = {
+            "task":      req.task,
+            "turns":     req.turns,
+            "route":     {},
+            "output":    "",
+            "cost_usd":  0.0,
+            "latency_s": 0.0,
+        }
+        final = app_graph.invoke(init)
+    return {
+        "output":    final["output"],
+        "route":     final["route"],
+        "cost_usd":  final["cost_usd"],
+        "latency_s": final["latency_s"],
+    }
 
 
 @app.get("/health")
-async def health() -> dict:
-    return {"status": "apex_operational"}
+async def health():
+    return {"status": "ok", "version": "3.0"}
+
+
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+from fastapi.responses import Response
+
+@app.get("/metrics")
+async def metrics():
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("orchestrator:app", host="127.0.0.1", port=8080, reload=False)
+    uvicorn.run("orchestrator:app", host="0.0.0.0", port=8080, reload=False)

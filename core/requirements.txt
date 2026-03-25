@@ -1,34 +1,12 @@
-# NCore Genesis vFinal — Python dependencies
-
-# ASGI / web
-fastapi
-uvicorn[standard]
-orjson
-uvloop
-
-# Agent orchestration
-langgraph
-
-# INT8 ONNX embedding engine
-optimum[onnxruntime]
-transformers
-numpy
-
-# Vector search
-faiss-cpu
-
-# HTTP client
-httpx
-
-# Environment / config
-python-dotenv
-
-# Redis (async + sync)
-redis[hiredis]
-
-# Observability
-prometheus-client
-structlog
-
-# Retry / resilience
-tenacity
+# NCore Genesis vFinal — Python deps (consensus March 2026)
+fastapi>=0.111
+uvicorn[standard]>=0.29
+langgraph>=0.1
+httpx>=0.27
+python-dotenv>=1.0
+redis>=5.0
+prometheus-client>=0.20
+structlog>=24.0
+tenacity>=8.3
+# Vast.ai CLI (install separately: pip install vastai)
+# supabase-py (optional cost tracking): pip install supabase
