@@ -1,100 +1,127 @@
-# NCore Genesis vFinal — Consensus Architecture (March 2026)
+# NCore Genesis vFinal — Consensus Architecture v3.1 (March 2026)
 
-## The OpenClaw vs NemoClaw Question — Resolved
+## Audit Status
 
-| Dimension | OpenClaw | NemoClaw |
-|---|---|---|
-| Purpose | Developer experimentation, personal/startup use | Enterprise production, compliance, team use |
-| Stack | TypeScript / Node.js | Python / NVIDIA NeMo / NIM |
-| Security | Admin-level (high risk in prod) | Policy-based sandboxing (OpenShell) |
-| Hardware | Any (local/cloud agnostic) | GPU-accelerated, NVIDIA-native |
-| Ecosystem | 5,000+ community skills | Curated enterprise toolchain |
-| Cost | Free, open-source | Enterprise licensing |
-
-**Decision for this setup:** We use **OpenClaw** as the gateway daemon (Node.js, runs as a systemd service, handles skill routing and context) because:
-1. The Oracle VM is a personal/experimental node, not an enterprise compliance environment
-2. OpenClaw's 5,000+ community skills ecosystem is broader for our use case
-3. NemoClaw's GPU-acceleration is targeted at NVIDIA DGX infrastructure we don't have
-4. OpenClaw = flexible glue; NemoClaw = hardened enterprise runtime
-
-The **Python orchestrator (FastAPI + LangGraph)** runs *alongside* OpenClaw as a separate systemd service, handling all AI routing and model calls. OpenClaw handles skills/context; the orchestrator handles inference routing.
+| Issue | Severity | Status |
+|-------|----------|--------|
+| C1: httpx connection pooling | Critical | ✅ Fixed |
+| C2: Async event loop unblocking | Critical | ✅ Fixed |
+| C3: Bare except: in budget guard | Critical | ✅ Fixed |
+| H1: moe_router.py dead code | High | ✅ Fixed — wired as secondary router |
+| H2: Missing requirements | High | ✅ Fixed |
+| H3: Qwen2.5 → Qwen3-Coder | High | ✅ Fixed |
+| H4: Sync subprocess in async path | High | ✅ Fixed — asyncio.create_subprocess_exec |
+| M1: No retry logic | Medium | ✅ Fixed — tenacity (3 attempts, exp backoff) |
+| M2: Unstructured stdlib logging | Medium | ✅ Fixed — structlog JSON |
+| M3: Missing metrics for MoE router | Medium | ✅ Fixed |
+| M4: XDP port 5678 unused | Medium | See deploy script note |
+| L1: CPU affinity single core | Low | No change — acceptable for single-user |
+| L2: No .env.example | Low | ✅ Fixed |
+| L3: XDP redundant vs 127.0.0.1 bind | Low | Defense-in-depth intentional |
 
 ---
 
-## Model Stack (Consensus)
+## OpenClaw vs NemoClaw — Resolved
+
+| Dimension | OpenClaw | NemoClaw |
+|---|---|---|
+| Purpose | Developer/startup experimentation | Enterprise production + compliance |
+| Stack | TypeScript / Node.js | Python / NVIDIA NeMo / NIM |
+| Security | Admin-level | Policy-based OpenShell sandboxing |
+| Hardware | Any (cloud-agnostic) | NVIDIA GPU-native (DGX-class) |
+| Ecosystem | 5,000+ community skills | Curated enterprise toolchain |
+| Cost | Free, open-source | Enterprise licensing |
+
+**Decision:** OpenClaw — personal/experimental Oracle node, not DGX enterprise.
+
+---
+
+## Model Stack (Consensus v3.1)
 
 | Tier | Model | Provider | Engine | Use Case | Est. Cost |
 |---|---|---|---|---|---|
 | NANO | nvidia/nemotron-nano-9b-v2 | OpenRouter | LMDeploy | Trivial Q&A | ~$0.00004 |
 | SUPER | nvidia/nemotron-3-super-120b-a12b | OpenRouter | SGLang/LMDeploy | Standard reasoning | ~$0.002 |
 | OPUS | anthropic/claude-opus-4.6 | OpenRouter | Claude API | Legal/medical/financial | ~$0.05–0.25 |
-| CODER | Qwen/Qwen2.5-Coder-14B | Vast serverless | SGLang | Code gen/debug | ~$0.001 |
+| CODER | Qwen/Qwen3-Coder-30B-A3B-Instruct | Vast serverless | SGLang | Code gen/debug | ~$0.001 |
 | UNCENSORED | dolphin-2.9.4-llama3.1-8b | Vast serverless | SGLang | Unfiltered text | ~$0.001 |
-| IMAGE | flux-1-dev | Vast pod | ComfyUI | Image generation | ~$0.03 |
-| VIDEO | wan-2.2-remix-nsfw | Vast pod | ComfyUI | Video generation | ~$0.25 |
-
-**Why Nemotron 3 Super over Dolphin/Dark-Champion for standard tasks:**
-- 120B params, 12B active (MoE), hybrid Mamba-Transformer architecture
-- 50%+ higher token generation vs comparable open models
-- Available free tier on OpenRouter (`nvidia/nemotron-3-super-120b-a12b:free`)
-- Best open model for multi-agent orchestration per NVIDIA benchmarks
+| IMAGE | flux-1-dev | Vast pod (ephemeral) | ComfyUI | Image generation | ~$0.03 |
+| VIDEO | wan-2.2-remix-nsfw | Vast pod (ephemeral) | ComfyUI | Video generation | ~$0.25 |
 
 ---
 
-## Inference Engines (Consensus)
+## Routing Architecture (Two-Layer)
 
-| Engine | Throughput (H100) | Best For | Used When |
+```
+Request
+  │
+  ▼
+NCoreMasterRouter (5-layer)
+  │  L0: Media detection → pod spec
+  │  L1: Trivial heuristic → Nano
+  │  L2: Domain keyword → Opus | Uncensored | Coder
+  │  L3: Complexity score → Opus | Super
+  │  L4: Engine selection → SGLang vs LMDeploy
+  │
+  ├─ tier=vast-serverless →  AthenaMoERouter
+  │                             (ONNX INT8 classifier + FAISS + Redis cache)
+  │                             → picks exact model + endpoint on Vast
+  │
+  └─ tier=openrouter/vast-pod → direct to provider
+```
+
+---
+
+## Inference Engines
+
+| Engine | Throughput | Best For | When Used |
 |---|---|---|---|
-| SGLang | ~16,200 tok/s | Multi-turn, RadixAttention cache | turns > 3 |
-| LMDeploy | ~16,100 tok/s | Quantized models, lowest TTFT | First call / single-turn |
+| SGLang | ~16,200 tok/s | Multi-turn, RadixAttention (85-95% cache) | turns > 3 |
+| LMDeploy | ~16,100 tok/s | First-call, quantized, lowest TTFT | First call / single-turn |
 | vLLM | ~12,500 tok/s | NOT USED — 29% slower | — |
 
-SGLang's RadixAttention achieves **85-95% cache-hit rate** on multi-turn sessions, dramatically reducing compute cost. LMDeploy's TurboMind C++ kernel delivers lowest time-to-first-token for cold/first calls.
-
 ---
 
-## Vast.ai Usage Strategy (Minimal Latency)
+## Vast.ai Latency Strategy
 
-### Serverless (for Coder + Uncensored)
-- Always-warm reserve pool: 1-2 workers kept hot
-- Vast.ai predictive optimization pre-provisions based on usage patterns
-- Cold-start: ~200ms–4s for small models with reserve pool enabled
-- Billing: per-request only
+### Serverless (Coder + Uncensored)
+- Reserve pool: 1–2 warm workers (cold start ~200ms with reserve)
+- Set `VAST_CODER_URL` and `VAST_UNCENSORED_URL` in `.env`
 
-### Pods (for Image + Video)
-- Spin up → run job → destroy immediately
-- Use `VAST_RESERVE_VIDEO_ID` / `VAST_RESERVE_IMAGE_ID` env vars to pre-warm a pod
-  and reuse it across requests (set to `vastai create instance ...` output)
-- RTX 4090 ~$0.17/hr; a 4-sec video at 2-min runtime = ~$0.006 compute cost
-- Destroy is called in `finally` block — guaranteed even on exception
+### Pods (Image + Video — ephemeral)
+- Spin up → run → destroy (guaranteed in `finally` block)
+- Pre-warm: set `VAST_RESERVE_VIDEO_ID` / `VAST_RESERVE_IMAGE_ID`
+  to skip 120s Wan 2.2 cold start on repeat video requests
+- RTX 4090 ~$0.17/hr; a 3-min video job ≈ $0.008 compute
 
-### Latency targets
-| Task | Target latency |
+### Latency Targets
+| Task | Target |
 |---|---|
-| Trivial (Nano) | < 500ms |
-| Standard (Super, LMDeploy, first call) | 1–3s TTFT |
-| Standard (Super, SGLang, multi-turn) | 0.5–1.5s (cached) |
-| Code (Qwen, Vast serverless) | 2–5s |
-| Image (FLUX, Vast pod, pre-warmed) | 30–60s |
-| Video (Wan 2.2, Vast pod, pre-warmed) | 90–180s |
+| Nano (trivial) | < 500ms |
+| Super, LMDeploy (first call) | 1–3s TTFT |
+| Super, SGLang (multi-turn cached) | 0.5–1.5s |
+| Coder, Vast serverless | 2–5s |
+| Image, pre-warmed pod | 30–60s |
+| Video, pre-warmed pod | 90–180s |
 
 ---
 
 ## Service Layout on Oracle VM
 
 ```
-ncore-gateway.service     ← FastAPI orchestrator (port 8080)
+ncore-gateway.service     ← FastAPI orchestrator (port 8080, 127.0.0.1)
 openclaw-gateway.service  ← OpenClaw skill daemon (port 3000)
 redis.service             ← Session/cache store
 tailscaled.service        ← Zero-trust network
 ```
 
-## Next Steps Checklist
+## Deployment Checklist
 
-- [ ] Fill in `~/.ncore/.env` with real API keys (OpenRouter, Vast.ai, Supabase, Telegram)
-- [ ] `sudo systemctl restart ncore-gateway` after git pull
-- [ ] Test: `curl -s -X POST http://127.0.0.1:8080/run -H 'Content-Type: application/json' -d '{"task":"what is 2+2"}'`
-- [ ] Set up Vast.ai serverless endpoints for Coder + Uncensored, add URLs to .env
-- [ ] Optional: pre-warm a Vast pod and set `VAST_RESERVE_VIDEO_ID` for zero-cold-start video
+- [ ] `git pull origin main` on Oracle VM
+- [ ] `pip install -r core/requirements.txt` (in venv)
+- [ ] Fill in `~/.ncore/.env` (OpenRouter + Vast.ai keys minimum)
+- [ ] `sudo systemctl restart ncore-gateway`
+- [ ] Test: `curl -s -X POST http://127.0.0.1:8080/run -d '{"task":"what is 2+2"}' -H 'Content-Type: application/json' | jq .route.tier`
+- [ ] Set up Vast.ai serverless workers → add URLs to .env
 - [ ] Authenticate Tailscale: `sudo tailscale up --authkey=tskey-...`
-- [ ] Wire Telegram bot for mobile C2
+- [ ] Optional: pre-warm Vast pods → set VAST_RESERVE_* IDs

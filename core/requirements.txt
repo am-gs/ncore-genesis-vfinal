@@ -1,12 +1,37 @@
-# NCore Genesis vFinal — Python deps (consensus March 2026)
+# NCore Genesis vFinal — Python deps v3.1 (audit fix H2)
+# All direct imports are listed explicitly.
+
+# Web framework + ASGI
 fastapi>=0.111
 uvicorn[standard]>=0.29
-langgraph>=0.1
+uvloop>=0.19          # faster event loop (used by uvicorn automatically)
+orjson>=3.10          # faster JSON serialization
+
+# HTTP client (async, connection pooling)
 httpx>=0.27
+
+# AI orchestration
+langgraph>=0.1
+
+# Config + logging
 python-dotenv>=1.0
-redis>=5.0
-prometheus-client>=0.20
 structlog>=24.0
+
+# Retry logic
 tenacity>=8.3
-# Vast.ai CLI (install separately: pip install vastai)
-# supabase-py (optional cost tracking): pip install supabase
+
+# Observability
+prometheus-client>=0.20
+
+# Cache + session store
+redis>=5.0
+
+# ML / MoE router (moe_router.py)
+numpy>=1.26
+faiss-cpu>=1.8
+optimum[onnxruntime]>=1.19
+transformers>=4.40
+sentence-transformers>=2.7
+
+# Vast.ai CLI (install separately via: pip install vastai)
+# Supabase (optional cost tracking): pip install supabase
