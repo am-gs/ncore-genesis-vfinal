@@ -33,5 +33,13 @@ optimum[onnxruntime]>=1.19
 transformers>=4.40
 sentence-transformers>=2.7
 
+# Browser stealth + async utilities
+camoufox
+vastai-sdk
+spiderfoot
+user-scanner
+aiofiles
+websockets
+
 # Vast.ai CLI (install separately via: pip install vastai)
 # Supabase (optional cost tracking): pip install supabase

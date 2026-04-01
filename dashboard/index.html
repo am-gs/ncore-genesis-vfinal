@@ -1,0 +1,752 @@
+<!--
+  NCore Genesis v7.5 — Manus.im-Clone Mission Control Dashboard
+  Single-file, zero-dependency, dark-themed three-panel dashboard.
+
+  === Node.js Proxy Server (optional) ===
+  Save the snippet below as proxy.js and run: node proxy.js
+
+  const http = require('http');
+  const fs = require('fs');
+  const path = require('path');
+  const { createProxyMiddleware } = require('http-proxy-middleware');
+  // npm install http-proxy-middleware
+  const GATEWAY = process.env.NCORE_GATEWAY || 'http://localhost:8000';
+  const PORT = 3000;
+  const server = http.createServer((req, res) => {
+    if (req.url === '/' || req.url === '/index.html') {
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      fs.createReadStream(path.join(__dirname, 'index.html')).pipe(res);
+    } else if (req.url.startsWith('/run') || req.url.startsWith('/health') || req.url.startsWith('/metrics')) {
+      const opts = { hostname: new URL(GATEWAY).hostname, port: new URL(GATEWAY).port,
+        path: req.url, method: req.method, headers: req.headers };
+      const proxy = http.request(opts, (pRes) => {
+        res.writeHead(pRes.statusCode, pRes.headers);
+        pRes.pipe(res);
+      });
+      req.pipe(proxy);
+      proxy.on('error', () => { res.writeHead(502); res.end('Gateway unreachable'); });
+    } else { res.writeHead(404); res.end('Not found'); }
+  });
+  // WebSocket proxy (ws://localhost:3000/ws -> ws://GATEWAY/ws)
+  server.on('upgrade', (req, socket, head) => {
+    const net = require('net');
+    const u = new URL(GATEWAY);
+    const upstream = net.connect(u.port || 8000, u.hostname, () => {
+      upstream.write(`GET /ws HTTP/1.1\r\nHost: ${u.host}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n` +
+        `Sec-WebSocket-Key: ${req.headers['sec-websocket-key']}\r\nSec-WebSocket-Version: 13\r\n\r\n`);
+      upstream.pipe(socket); socket.pipe(upstream);
+    });
+    upstream.on('error', () => socket.destroy());
+  });
+  server.listen(PORT, () => console.log(`NCore Dashboard on http://localhost:${PORT}`));
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NCore Genesis — Mission Control</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d1117;--bg2:#161b22;--bg3:#1a1a2e;--border:#21262d;
+  --blue:#58a6ff;--green:#3fb950;--red:#f85149;--yellow:#e3b341;--purple:#bc8cff;
+  --text:#c9d1d9;--text2:#8b949e;--text3:#484f58;
+  --term-bg:#161b22;--term-text:#39d353;
+  --radius:8px;--panel-pad:12px;
+}
+html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+  font-size:14px;color:var(--text);background:var(--bg);overflow:hidden}
+button,input,select,textarea{font:inherit;color:inherit;background:transparent;border:none;outline:none}
+button{cursor:pointer}
+::-webkit-scrollbar{width:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+
+/* === LAYOUT === */
+.app{display:flex;flex-direction:column;height:100vh}
+.main{display:flex;flex:1;overflow:hidden}
+#left-panel{width:250px;min-width:250px;background:var(--bg3);border-right:1px solid var(--border);
+  display:flex;flex-direction:column;overflow-y:auto;transition:margin-left .25s}
+#left-panel.collapsed{margin-left:-250px}
+#center-panel{flex:1;display:flex;flex-direction:column;min-width:0}
+#right-panel{width:350px;min-width:350px;border-left:1px solid var(--border);
+  display:flex;flex-direction:column;overflow:hidden}
+#bottom-bar{height:40px;background:var(--bg2);border-top:1px solid var(--border);
+  display:flex;align-items:center;padding:0 16px;gap:20px;font-size:12px;color:var(--text2);flex-shrink:0}
+
+/* === LEFT PANEL === */
+.lp-header{padding:16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px}
+.lp-header h2{font-size:15px;font-weight:600;color:var(--text)}
+.lp-logo{width:20px;height:20px;background:var(--blue);border-radius:4px;display:flex;align-items:center;
+  justify-content:center;font-weight:700;font-size:11px;color:#fff}
+.lp-nav{padding:8px 0}
+.lp-nav a{display:flex;align-items:center;gap:10px;padding:8px 16px;color:var(--text2);
+  text-decoration:none;font-size:13px;transition:background .15s,color .15s;cursor:pointer}
+.lp-nav a:hover,.lp-nav a.active{background:rgba(88,166,255,.1);color:var(--text)}
+.lp-nav a .icon{width:16px;text-align:center;font-size:14px}
+.lp-section{padding:12px 16px}
+.lp-section h3{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:8px}
+.status-row{display:flex;align-items:center;gap:8px;padding:4px 0;font-size:13px;color:var(--text2)}
+.dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.dot.up{background:var(--green);box-shadow:0 0 6px rgba(63,185,80,.4)}
+.dot.down{background:var(--red);box-shadow:0 0 6px rgba(248,81,73,.4)}
+.dot.unknown{background:var(--text3)}
+.session-list{list-style:none;padding:0}
+.session-item{padding:8px 16px;font-size:12px;color:var(--text2);cursor:pointer;
+  border-bottom:1px solid rgba(255,255,255,.04);transition:background .15s}
+.session-item:hover{background:rgba(255,255,255,.04)}
+.session-item .ts{color:var(--text3);font-size:11px}
+.session-item.active{background:rgba(88,166,255,.08);border-left:2px solid var(--blue)}
+
+/* === CENTER PANEL (Chat Feed) === */
+.chat-feed{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px}
+.msg{max-width:90%;padding:10px 14px;border-radius:var(--radius);font-size:13px;line-height:1.5;
+  position:relative;word-wrap:break-word}
+.msg .meta{display:flex;align-items:center;gap:8px;margin-bottom:4px;font-size:11px;color:var(--text2)}
+.msg .meta .model-badge{padding:1px 6px;border-radius:10px;font-size:10px;font-weight:600}
+.msg .meta .cost-badge{color:var(--green);font-weight:600}
+.msg-user{background:#1c2333;border:1px solid var(--border);align-self:flex-end;border-radius:var(--radius) var(--radius) 4px var(--radius)}
+.msg-agent{background:var(--bg2);border:1px solid var(--border);align-self:flex-start;border-radius:var(--radius) var(--radius) var(--radius) 4px}
+.msg-system{background:rgba(88,166,255,.08);border:1px solid rgba(88,166,255,.2);align-self:center;
+  text-align:center;font-size:12px;color:var(--blue)}
+.msg-tool{background:rgba(188,140,255,.06);border:1px solid rgba(188,140,255,.15);align-self:flex-start;width:90%}
+.msg-tool .tool-header{display:flex;align-items:center;gap:6px;font-weight:600;color:var(--purple);
+  font-size:12px;cursor:pointer}
+.msg-tool .tool-body{margin-top:6px;padding:8px;background:var(--bg);border-radius:4px;
+  font-family:'SF Mono',SFMono-Regular,Consolas,monospace;font-size:12px;max-height:200px;
+  overflow-y:auto;display:none;white-space:pre-wrap}
+.msg-tool .tool-body.open{display:block}
+.thinking-toggle{cursor:pointer;color:var(--text3);font-size:11px;user-select:none}
+.thinking-toggle:hover{color:var(--text2)}
+.thinking-content{margin-top:6px;padding:8px;background:rgba(255,255,255,.02);border-radius:4px;
+  font-size:12px;color:var(--text2);display:none;white-space:pre-wrap}
+.thinking-content.open{display:block}
+.copy-btn{position:absolute;top:6px;right:6px;padding:2px 6px;font-size:10px;background:var(--border);
+  border-radius:4px;color:var(--text2);opacity:0;transition:opacity .15s}
+.msg:hover .copy-btn{opacity:1}
+.copy-btn:hover{background:var(--blue);color:#fff}
+
+/* Chat input */
+.chat-input-area{padding:12px 16px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:flex-end}
+.chat-input-wrap{flex:1;display:flex;flex-direction:column;background:var(--bg2);
+  border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+#chat-input{padding:10px 12px;resize:none;min-height:42px;max-height:150px;line-height:1.4;
+  background:transparent;color:var(--text);font-size:13px}
+.chat-input-footer{display:flex;align-items:center;justify-content:space-between;padding:4px 8px;
+  border-top:1px solid var(--border)}
+#model-select{background:var(--bg);padding:2px 8px;border-radius:4px;font-size:11px;
+  color:var(--text2);border:1px solid var(--border);cursor:pointer}
+#model-select option{background:var(--bg)}
+#send-btn{padding:6px 16px;background:var(--blue);color:#fff;border-radius:6px;font-size:12px;
+  font-weight:600;transition:opacity .15s}
+#send-btn:hover{opacity:.85}
+#send-btn:disabled{opacity:.4;cursor:not-allowed}
+.input-hint{font-size:10px;color:var(--text3)}
+
+/* === RIGHT PANEL === */
+.rp-section{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.rp-section+.rp-section{border-top:1px solid var(--border)}
+.rp-header{padding:8px 12px;font-size:12px;font-weight:600;color:var(--text2);
+  border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.rp-header .dot{width:6px;height:6px}
+#terminal{flex:1;overflow-y:auto;padding:10px;background:var(--term-bg);
+  font-family:'SF Mono',SFMono-Regular,Consolas,monospace;font-size:12px;color:var(--term-text);
+  line-height:1.6;white-space:pre-wrap;word-break:break-all}
+.term-cmd{color:var(--blue)}
+.term-err{color:var(--red)}
+.term-info{color:var(--text2)}
+.metrics-grid{flex:1;overflow-y:auto;padding:var(--panel-pad);display:flex;flex-direction:column;gap:10px}
+.metric-cards{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.metric-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:10px}
+.metric-card .label{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);margin-bottom:4px}
+.metric-card .value{font-size:22px;font-weight:700;color:var(--text)}
+.metric-card .value .unit{font-size:12px;font-weight:400;color:var(--text2)}
+
+/* GPU bars */
+.gpu-section h4{font-size:11px;color:var(--text2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px}
+.gpu-bar-wrap{margin-bottom:6px}
+.gpu-bar-label{display:flex;justify-content:space-between;font-size:11px;color:var(--text2);margin-bottom:2px}
+.gpu-bar{height:14px;background:var(--bg);border-radius:3px;overflow:hidden}
+.gpu-bar-fill{height:100%;border-radius:3px;transition:width .5s;background:linear-gradient(90deg,var(--green),var(--blue))}
+
+/* Pie chart (CSS-only) */
+.pie-section h4{font-size:11px;color:var(--text2);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px}
+.pie-wrap{display:flex;align-items:center;gap:16px}
+.pie{width:80px;height:80px;border-radius:50%;position:relative}
+.pie-legend{font-size:11px;color:var(--text2);line-height:1.8}
+.pie-legend span{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:4px;vertical-align:middle}
+
+/* === BOTTOM BAR === */
+.bb-item{display:flex;align-items:center;gap:5px;white-space:nowrap}
+.bb-item .dot{width:6px;height:6px}
+.bb-sep{width:1px;height:20px;background:var(--border)}
+
+/* === TOASTS === */
+.toast-container{position:fixed;top:16px;right:16px;z-index:9999;display:flex;flex-direction:column;gap:8px}
+.toast{padding:10px 16px;border-radius:var(--radius);font-size:12px;color:#fff;
+  box-shadow:0 4px 12px rgba(0,0,0,.4);animation:toastIn .3s ease,toastOut .3s ease 3.7s forwards;max-width:320px}
+.toast.success{background:#1a7f37}
+.toast.error{background:#b62324}
+.toast.info{background:#1158c7}
+@keyframes toastIn{from{opacity:0;transform:translateX(40px)}to{opacity:1;transform:translateX(0)}}
+@keyframes toastOut{from{opacity:1}to{opacity:0;transform:translateY(-10px)}}
+
+/* === TOGGLE BUTTONS === */
+.toggle-btn{padding:2px 8px;font-size:11px;color:var(--text3);border:1px solid var(--border);
+  border-radius:4px;cursor:pointer;transition:all .15s}
+.toggle-btn:hover{color:var(--text2);border-color:var(--text3)}
+.toggle-btn.on{color:var(--blue);border-color:var(--blue)}
+#sidebar-toggle{position:fixed;top:8px;left:8px;z-index:100;background:var(--bg2);
+  padding:4px 8px;border-radius:4px;border:1px solid var(--border);color:var(--text2);
+  font-size:14px;display:none;cursor:pointer}
+
+/* === RESPONSIVE === */
+@media(max-width:1100px){
+  #right-panel{width:280px;min-width:280px}
+}
+@media(max-width:900px){
+  #left-panel{position:fixed;z-index:50;height:100%;margin-left:-250px}
+  #left-panel.show{margin-left:0}
+  #sidebar-toggle{display:block}
+  #right-panel{display:none}
+  .main{flex-direction:column}
+}
+@media(max-width:600px){
+  .metric-cards{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<button id="sidebar-toggle" onclick="document.getElementById('left-panel').classList.toggle('show')">&#9776;</button>
+
+<div class="toast-container" id="toasts"></div>
+
+<div class="app">
+<div class="main">
+
+<!-- LEFT PANEL -->
+<div id="left-panel">
+  <div class="lp-header">
+    <div class="lp-logo">N</div>
+    <h2>NCore Genesis</h2>
+  </div>
+  <nav class="lp-nav">
+    <a class="active" data-view="tasks"><span class="icon">&#9654;</span> Tasks</a>
+    <a data-view="gpu"><span class="icon">&#9881;</span> GPU Status</a>
+    <a data-view="cost"><span class="icon">$</span> Cost Tracker</a>
+    <a data-view="settings"><span class="icon">&#9881;</span> Settings</a>
+  </nav>
+  <div class="lp-section">
+    <h3>System Status</h3>
+    <div class="status-row"><span class="dot unknown" id="st-ollama"></span>Ollama</div>
+    <div class="status-row"><span class="dot unknown" id="st-redis"></span>Redis</div>
+    <div class="status-row"><span class="dot unknown" id="st-gateway"></span>Gateway</div>
+    <div class="status-row"><span class="dot unknown" id="st-openclaw"></span>OpenClaw</div>
+  </div>
+  <div class="lp-section">
+    <h3>Session History</h3>
+    <ul class="session-list" id="session-list"></ul>
+  </div>
+</div>
+
+<!-- CENTER PANEL -->
+<div id="center-panel">
+  <div class="chat-feed" id="chat-feed"></div>
+  <div class="chat-input-area">
+    <div class="chat-input-wrap">
+      <textarea id="chat-input" rows="1" placeholder="Describe your task..."></textarea>
+      <div class="chat-input-footer">
+        <div style="display:flex;align-items:center;gap:8px">
+          <select id="model-select">
+            <option value="local">Local (Dark Champion)</option>
+            <option value="free">Free (Qwen3 Coder)</option>
+            <option value="fast">Fast (Gemini Flash Lite)</option>
+            <option value="worker" selected>Worker (DeepSeek R1)</option>
+            <option value="opus">Opus (Claude 4.6)</option>
+          </select>
+          <span class="input-hint">Enter to send &middot; Ctrl+Enter for newline</span>
+        </div>
+        <button id="send-btn" onclick="sendMessage()">Send</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- RIGHT PANEL -->
+<div id="right-panel">
+  <div class="rp-section">
+    <div class="rp-header">
+      <span>Live Terminal</span>
+      <span style="display:flex;gap:6px;align-items:center">
+        <button class="toggle-btn" id="scroll-lock-btn" onclick="toggleScrollLock()" title="Auto-scroll">&#8595; Auto</button>
+        <span class="dot up" id="term-status"></span>
+      </span>
+    </div>
+    <div id="terminal"><span class="term-info">$ Waiting for commands...</span>
+</div>
+  </div>
+  <div class="rp-section">
+    <div class="rp-header">Metrics</div>
+    <div class="metrics-grid">
+      <div class="metric-cards">
+        <div class="metric-card"><div class="label">Tasks Completed</div><div class="value" id="m-tasks">0</div></div>
+        <div class="metric-card"><div class="label">Quality Score</div><div class="value" id="m-quality">—</div></div>
+        <div class="metric-card"><div class="label">Tokens Used</div><div class="value" id="m-tokens">0</div></div>
+        <div class="metric-card"><div class="label">Session Cost</div><div class="value" id="m-cost">$0.00</div></div>
+      </div>
+      <div class="gpu-section">
+        <h4>GPU Utilization</h4>
+        <div id="gpu-bars"><div style="font-size:11px;color:var(--text3)">No active GPUs</div></div>
+      </div>
+      <div class="pie-section">
+        <h4>Model Routing</h4>
+        <div class="pie-wrap">
+          <div class="pie" id="pie-chart"></div>
+          <div class="pie-legend" id="pie-legend"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div><!-- .main -->
+
+<!-- BOTTOM BAR -->
+<div id="bottom-bar">
+  <div class="bb-item"><span style="color:var(--text3)">Tokens:</span><span id="bb-tokens-in">0</span>in / <span id="bb-tokens-out">0</span>out</div>
+  <div class="bb-sep"></div>
+  <div class="bb-item"><span style="color:var(--green);font-weight:600" id="bb-cost">$0.00</span> this session</div>
+  <div class="bb-sep"></div>
+  <div class="bb-item"><span class="dot up" id="bb-gpu-dot"></span><span id="bb-gpus">0</span> GPUs <span id="bb-gpu-cost" style="color:var(--text3)"></span></div>
+  <div class="bb-sep"></div>
+  <div class="bb-item">Model: <span id="bb-model" style="color:var(--blue)">Worker</span></div>
+  <div class="bb-sep"></div>
+  <div class="bb-item">Uptime: <span id="bb-uptime">00:00:00</span></div>
+  <div style="flex:1"></div>
+  <div class="bb-item" style="color:var(--text3)">NCore Genesis v7.5</div>
+</div>
+</div><!-- .app -->
+
+<script>
+// ===== STATE =====
+const S = {
+  ws: null, wsOk: false, pollTimer: null,
+  autoScroll: true, scrollLockChat: false,
+  sessions: [], currentSession: null,
+  tokensIn: 0, tokensOut: 0, cost: 0, tasksCompleted: 0,
+  qualityScore: null, gpus: [], routingBreakdown: {},
+  startTime: Date.now(), msgId: 0
+};
+
+const MODELS = {
+  local:'Local (Dark Champion)',free:'Free (Qwen3 Coder)',fast:'Fast (Gemini Flash Lite)',
+  worker:'Worker (DeepSeek R1)',opus:'Opus (Claude 4.6)'
+};
+const MODEL_COLORS = {local:'#e3b341',free:'#3fb950',fast:'#58a6ff',worker:'#bc8cff',opus:'#f47067'};
+
+// ===== UTILS =====
+function $(id){return document.getElementById(id)}
+function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
+function fmtNum(n){return n>=1e6?(n/1e6).toFixed(1)+'M':n>=1e3?(n/1e3).toFixed(1)+'K':String(n)}
+function fmtCost(c){return '$'+c.toFixed(4)}
+function fmtTime(ms){
+  const s=Math.floor(ms/1000),h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sec=s%60;
+  return [h,m,sec].map(v=>String(v).padStart(2,'0')).join(':');
+}
+function ts(){return new Date().toLocaleTimeString('en-US',{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'})}
+
+// ===== TOASTS =====
+function toast(msg,type='info'){
+  const el=document.createElement('div');el.className='toast '+type;el.textContent=msg;
+  $('toasts').appendChild(el);setTimeout(()=>el.remove(),4000);
+}
+
+// ===== TERMINAL =====
+function termWrite(text,cls=''){
+  const term=$('terminal');const line=document.createElement('div');
+  if(cls)line.className=cls;
+  line.textContent=text;term.appendChild(line);
+  if(S.autoScroll)term.scrollTop=term.scrollHeight;
+}
+
+function toggleScrollLock(){
+  S.autoScroll=!S.autoScroll;
+  const b=$('scroll-lock-btn');
+  b.classList.toggle('on',S.autoScroll);
+  b.innerHTML=S.autoScroll?'&#8595; Auto':'&#8214; Lock';
+}
+
+// ===== CHAT MESSAGES =====
+function addMsg(type,content,opts={}){
+  const feed=$('chat-feed');
+  const div=document.createElement('div');
+  div.className='msg msg-'+type;
+  div.id='msg-'+S.msgId++;
+  let meta='<div class="meta"><span>'+ts()+'</span>';
+  if(opts.model){
+    const c=MODEL_COLORS[opts.model]||'var(--text3)';
+    meta+='<span class="model-badge" style="background:'+c+'22;color:'+c+';border:1px solid '+c+'44">'+esc(MODELS[opts.model]||opts.model)+'</span>';
+  }
+  if(opts.tokens)meta+='<span>'+fmtNum(opts.tokens)+' tok</span>';
+  if(opts.cost!=null)meta+='<span class="cost-badge">'+fmtCost(opts.cost)+'</span>';
+  meta+='</div>';
+
+  let body='';
+  if(type==='tool'){
+    const toolName=opts.toolName||'tool';
+    const args=opts.args||'';
+    body='<div class="tool-header" onclick="this.nextElementSibling.classList.toggle(\'open\')">&#9654; '+esc(toolName);
+    if(args)body+=' <span style="color:var(--text3);font-weight:400">'+esc(typeof args==='string'?args:JSON.stringify(args))+'</span>';
+    body+='</div><div class="tool-body">'+esc(content)+'</div>';
+  } else if(opts.thinking){
+    body='<div>'+formatContent(content)+'</div>';
+    body+='<div class="thinking-toggle" onclick="this.nextElementSibling.classList.toggle(\'open\')">&#9662; Show thinking</div>';
+    body+='<div class="thinking-content">'+esc(opts.thinking)+'</div>';
+  } else {
+    body='<div>'+formatContent(content)+'</div>';
+  }
+
+  div.innerHTML=meta+body+'<button class="copy-btn" onclick="copyMsg(this)">Copy</button>';
+  feed.appendChild(div);
+  if(!S.scrollLockChat)feed.scrollTop=feed.scrollHeight;
+  return div;
+}
+
+function formatContent(s){
+  // Minimal markdown: code blocks and inline code
+  s=esc(s);
+  s=s.replace(/```(\w*)\n([\s\S]*?)```/g,'<pre style="background:var(--bg);padding:8px;border-radius:4px;overflow-x:auto;margin:6px 0"><code>$2</code></pre>');
+  s=s.replace(/`([^`]+)`/g,'<code style="background:var(--bg);padding:1px 4px;border-radius:3px">$1</code>');
+  s=s.replace(/\n/g,'<br>');
+  return s;
+}
+
+function copyMsg(btn){
+  const msg=btn.parentElement;
+  const text=msg.innerText.replace(/^Copy$/m,'').trim();
+  navigator.clipboard.writeText(text).then(()=>{btn.textContent='Copied!';setTimeout(()=>btn.textContent='Copy',1500)});
+}
+
+// ===== SESSIONS =====
+function newSession(){
+  const id=Date.now();
+  const session={id,name:'Task #'+(S.sessions.length+1),ts:new Date().toISOString(),messages:[]};
+  S.sessions.unshift(session);S.currentSession=session;
+  renderSessions();
+  addMsg('system','New session started');
+  return session;
+}
+function renderSessions(){
+  const ul=$('session-list');ul.innerHTML='';
+  S.sessions.slice(0,20).forEach(s=>{
+    const li=document.createElement('li');
+    li.className='session-item'+(S.currentSession&&S.currentSession.id===s.id?' active':'');
+    li.innerHTML='<div>'+esc(s.name)+'</div><div class="ts">'+new Date(s.ts).toLocaleString()+'</div>';
+    li.onclick=()=>{S.currentSession=s;renderSessions()};
+    ul.appendChild(li);
+  });
+}
+
+// ===== SEND MESSAGE =====
+async function sendMessage(){
+  const input=$('chat-input');
+  const text=input.value.trim();if(!text)return;
+  const model=$('model-select').value;
+  input.value='';autoResizeInput();
+  addMsg('user',text,{model});
+  $('send-btn').disabled=true;
+
+  termWrite('$ POST /run task="'+text.slice(0,60)+(text.length>60?'...':'')+'"','term-cmd');
+
+  try{
+    const res=await fetch('/run',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({task:text,model_hint:model,turns:10})
+    });
+    if(!res.ok)throw new Error('HTTP '+res.status);
+    const data=await res.json();
+    handleRunResponse(data,model);
+  }catch(e){
+    addMsg('system','Failed to reach gateway: '+e.message);
+    termWrite('Error: '+e.message,'term-err');
+    toast('Request failed: '+e.message,'error');
+    // Demo fallback — show a simulated agent response
+    simulateResponse(text,model);
+  }
+  $('send-btn').disabled=false;
+}
+
+function handleRunResponse(data,model){
+  if(data.steps&&Array.isArray(data.steps)){
+    data.steps.forEach(step=>{
+      if(step.type==='tool_call'){
+        addMsg('tool',step.result||'',{model,toolName:step.tool,args:step.args});
+        termWrite('> '+step.tool+' '+JSON.stringify(step.args||{}),'term-info');
+        if(step.result)termWrite(String(step.result).slice(0,500));
+      }else if(step.type==='thinking'){
+        // merge with next output
+      }else{
+        addMsg('agent',step.content||step.text||JSON.stringify(step),{model,tokens:step.tokens,cost:step.cost});
+      }
+    });
+  }
+  if(data.output||data.result){
+    const out=data.output||data.result;
+    const tok=data.total_tokens||data.tokens||0;
+    const cost=data.cost||0;
+    addMsg('agent',typeof out==='string'?out:JSON.stringify(out,null,2),{model,tokens:tok,cost});
+    S.tokensOut+=(data.output_tokens||tok);S.tokensIn+=(data.input_tokens||0);
+    S.cost+=cost;S.tasksCompleted++;
+    updateMetrics();
+    toast('Task completed','success');
+  }
+  termWrite('--- task complete ---','term-info');
+}
+
+// Simulated response for demo/offline mode
+function simulateResponse(text,model){
+  setTimeout(()=>{
+    addMsg('agent','[Demo Mode] Gateway offline — showing simulated response.\n\nTask received: "'+text+'"\nModel: '+MODELS[model]+'\n\nIn production, this routes through the 5-layer NCore router:\n1. Cache check (Redis/RadixAttention)\n2. Complexity classifier\n3. Athena MoE gate\n4. Cost optimizer\n5. Model dispatch',
+      {model,tokens:247,cost:0.0003,thinking:'Analyzing task complexity...\nSelected routing tier: '+model+'\nEstimated tokens: 247'});
+    S.tokensOut+=247;S.tokensIn+=text.split(/\s+/).length*1.3|0;
+    S.cost+=0.0003;S.tasksCompleted++;
+    updateMetrics();
+    termWrite('> [demo] simulated response','term-info');
+  },800);
+}
+
+// ===== INPUT HANDLING =====
+$('chat-input').addEventListener('keydown',e=>{
+  if(e.key==='Enter'&&!e.ctrlKey&&!e.shiftKey){e.preventDefault();sendMessage()}
+  if(e.key==='Enter'&&e.ctrlKey){/* allow newline */}
+});
+$('chat-input').addEventListener('input',autoResizeInput);
+function autoResizeInput(){
+  const el=$('chat-input');el.style.height='auto';el.style.height=Math.min(el.scrollHeight,150)+'px';
+}
+
+// ===== MODEL SELECTOR =====
+$('model-select').addEventListener('change',function(){
+  $('bb-model').textContent=MODELS[this.value]||this.value;
+});
+
+// ===== NAV =====
+document.querySelectorAll('.lp-nav a').forEach(a=>{
+  a.addEventListener('click',function(){
+    document.querySelectorAll('.lp-nav a').forEach(x=>x.classList.remove('active'));
+    this.classList.add('active');
+    // Views could be expanded — for now all show the main chat
+  });
+});
+
+// ===== WEBSOCKET =====
+function connectWS(){
+  try{
+    S.ws=new WebSocket((location.protocol==='https:'?'wss:':'ws:')+'//'+location.host+'/ws');
+    S.ws.onopen=()=>{
+      S.wsOk=true;$('term-status').className='dot up';
+      termWrite('WebSocket connected','term-info');
+      if(S.pollTimer){clearInterval(S.pollTimer);S.pollTimer=null}
+    };
+    S.ws.onmessage=ev=>{
+      try{const msg=JSON.parse(ev.data);handleWSMessage(msg)}
+      catch(e){termWrite(ev.data)}
+    };
+    S.ws.onclose=()=>{
+      S.wsOk=false;$('term-status').className='dot down';
+      termWrite('WebSocket disconnected — falling back to polling','term-err');
+      startPolling();
+      setTimeout(connectWS,5000);
+    };
+    S.ws.onerror=()=>{S.ws.close()};
+  }catch(e){startPolling()}
+}
+
+function handleWSMessage(msg){
+  switch(msg.type){
+    case 'step':
+      if(msg.tool)addMsg('tool',msg.result||'',{toolName:msg.tool,args:msg.args,model:msg.model});
+      else addMsg('agent',msg.content||'',{model:msg.model,tokens:msg.tokens,cost:msg.cost});
+      break;
+    case 'terminal':
+      termWrite(msg.data,msg.error?'term-err':'');
+      break;
+    case 'metrics':
+      applyMetrics(msg);break;
+    case 'status':
+      updateServiceStatus(msg);break;
+    case 'gpu_event':
+      toast(msg.message||'GPU event','info');
+      break;
+    case 'complete':
+      S.tasksCompleted++;updateMetrics();toast('Task completed','success');break;
+    case 'error':
+      addMsg('system','Error: '+(msg.message||msg.error));toast(msg.message||'Error','error');break;
+  }
+}
+
+// ===== POLLING FALLBACK =====
+function startPolling(){
+  if(S.pollTimer)return;
+  S.pollTimer=setInterval(async()=>{
+    try{
+      const [h,m]=await Promise.all([
+        fetch('/health').then(r=>r.json()).catch(()=>null),
+        fetch('/metrics').then(r=>r.text()).catch(()=>null)
+      ]);
+      if(h)updateServiceStatus(h);
+      if(m)parsePrometheusMetrics(m);
+    }catch(e){}
+  },3000);
+}
+
+function updateServiceStatus(h){
+  const map={ollama:'st-ollama',redis:'st-redis',gateway:'st-gateway',openclaw:'st-openclaw'};
+  Object.entries(map).forEach(([k,id])=>{
+    const el=$(id);if(!el)return;
+    const up=h[k]===true||h[k]==='ok'||h[k]==='up'||(h.services&&h.services[k]);
+    el.className='dot '+(up?'up':'down');
+  });
+  // If health came back at all, gateway is up
+  if(h)$('st-gateway').className='dot up';
+}
+
+// ===== PROMETHEUS PARSER =====
+function parsePrometheusMetrics(text){
+  const get=(name)=>{
+    const m=text.match(new RegExp('^'+name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'(?:\\{[^}]*\\})?\\s+([\\d.eE+\\-]+)','m'));
+    return m?parseFloat(m[1]):null;
+  };
+  const getAll=(name)=>{
+    const re=new RegExp('^'+name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\{([^}]*)\\}\\s+([\\d.eE+\\-]+)','gm');
+    const results={};let match;
+    while((match=re.exec(text))!==null){
+      const labels={};match[1].split(',').forEach(p=>{const[k,v]=p.split('=');labels[k]=v?v.replace(/"/g,''):''});
+      results[JSON.stringify(labels)]=parseFloat(match[2]);
+    }
+    return results;
+  };
+
+  const requests=get('ncore_requests_total');
+  const cost=get('ncore_cost_usd_total');
+  const pods=get('ncore_vast_pods_active');
+  const cacheRate=get('ncore_cache_hit_rate');
+
+  if(requests!=null){S.tasksCompleted=Math.round(requests);$('m-tasks').textContent=fmtNum(S.tasksCompleted)}
+  if(cost!=null){S.cost=cost}
+  if(pods!=null){
+    $('bb-gpus').textContent=Math.round(pods);
+    $('bb-gpu-dot').className='dot '+(pods>0?'up':'down');
+  }
+  if(cacheRate!=null){
+    const q=Math.round(cacheRate*100);
+    S.qualityScore=q;$('m-quality').textContent=q+'%';
+  }
+
+  // Routing breakdown
+  const tiers=getAll('ncore_route_tier_total');
+  S.routingBreakdown={};
+  Object.entries(tiers).forEach(([k,v])=>{
+    try{const l=JSON.parse(k);S.routingBreakdown[l.tier||'unknown']=v}catch(e){}
+  });
+
+  updateMetrics();
+  renderPieChart();
+}
+
+// ===== METRICS UPDATE =====
+function updateMetrics(){
+  $('m-tasks').textContent=fmtNum(S.tasksCompleted);
+  $('m-tokens').textContent=fmtNum(S.tokensIn+S.tokensOut);
+  $('m-cost').textContent=fmtCost(S.cost);
+  if(S.qualityScore!=null)$('m-quality').textContent=S.qualityScore+'%';
+  $('bb-tokens-in').textContent=fmtNum(S.tokensIn);
+  $('bb-tokens-out').textContent=fmtNum(S.tokensOut);
+  $('bb-cost').textContent=fmtCost(S.cost);
+}
+
+function applyMetrics(m){
+  if(m.tokens_in!=null)S.tokensIn=m.tokens_in;
+  if(m.tokens_out!=null)S.tokensOut=m.tokens_out;
+  if(m.cost!=null)S.cost=m.cost;
+  if(m.tasks!=null)S.tasksCompleted=m.tasks;
+  if(m.quality!=null){S.qualityScore=m.quality;$('m-quality').textContent=m.quality+'%'}
+  if(m.gpus)renderGPUs(m.gpus);
+  if(m.routing)S.routingBreakdown=m.routing;
+  updateMetrics();
+  renderPieChart();
+}
+
+// ===== GPU BARS =====
+function renderGPUs(gpus){
+  const c=$('gpu-bars');
+  if(!gpus||gpus.length===0){c.innerHTML='<div style="font-size:11px;color:var(--text3)">No active GPUs</div>';return}
+  c.innerHTML='';
+  gpus.forEach(g=>{
+    const w=document.createElement('div');w.className='gpu-bar-wrap';
+    const pct=Math.round((g.utilization||0)*100);
+    const costStr=g.cost!=null?' — '+fmtCost(g.cost)+'/hr':'';
+    w.innerHTML='<div class="gpu-bar-label"><span>'+esc(g.name||g.id||'GPU')+'</span><span>'+pct+'%'+costStr+'</span></div>'+
+      '<div class="gpu-bar"><div class="gpu-bar-fill" style="width:'+pct+'%"></div></div>';
+    c.appendChild(w);
+  });
+  $('bb-gpus').textContent=gpus.length;
+  $('bb-gpu-dot').className='dot up';
+  const totalCost=gpus.reduce((a,g)=>a+(g.cost||0),0);
+  $('bb-gpu-cost').textContent=totalCost>0?'('+fmtCost(totalCost)+'/hr)':'';
+}
+
+// ===== PIE CHART (CSS conic-gradient) =====
+function renderPieChart(){
+  const data=S.routingBreakdown;const keys=Object.keys(data);
+  if(keys.length===0){
+    // Demo data if nothing from metrics
+    Object.assign(S.routingBreakdown,{local:40,free:25,fast:15,worker:15,opus:5});
+    renderPieChart();return;
+  }
+  const total=Object.values(data).reduce((a,b)=>a+b,0)||1;
+  const colors={local:'#e3b341',free:'#3fb950',fast:'#58a6ff',worker:'#bc8cff',opus:'#f47067',
+    nano:'#e3b341',super:'#58a6ff',coder:'#3fb950',uncensored:'#f47067'};
+  let stops=[];let cum=0;
+  const legend=$('pie-legend');legend.innerHTML='';
+  keys.forEach(k=>{
+    const pct=data[k]/total*100;
+    const c=colors[k]||'#8b949e';
+    stops.push(c+' '+cum.toFixed(1)+'% '+(cum+pct).toFixed(1)+'%');
+    cum+=pct;
+    legend.innerHTML+='<div><span style="background:'+c+'"></span>'+esc(k)+' '+Math.round(pct)+'%</div>';
+  });
+  $('pie-chart').style.background='conic-gradient('+stops.join(',')+')';
+}
+
+// ===== UPTIME =====
+setInterval(()=>{$('bb-uptime').textContent=fmtTime(Date.now()-S.startTime)},1000);
+
+// ===== SCROLL LOCK (chat) =====
+$('chat-feed').addEventListener('scroll',function(){
+  const el=this;
+  S.scrollLockChat=el.scrollTop+el.clientHeight<el.scrollHeight-50;
+});
+
+// ===== INIT =====
+(function init(){
+  newSession();
+  connectWS();
+  startPolling(); // start polling immediately, WS will cancel it on connect
+  renderPieChart();
+  $('scroll-lock-btn').classList.add('on');
+  addMsg('system','NCore Genesis v7.5 Mission Control ready. Gateway: '+location.origin);
+  addMsg('agent','Welcome to NCore Genesis. I can execute tasks using the 5-layer routing stack:\n\n'+
+    '1. Local (Dark Champion) — abliterated 8B, zero cost\n'+
+    '2. Free (Qwen3 Coder) — 480B MoE, free tier\n'+
+    '3. Fast (Gemini Flash Lite) — Google free tier\n'+
+    '4. Worker (DeepSeek R1) — 671B reasoning\n'+
+    '5. Opus (Claude 4.6) — maximum capability\n\n'+
+    'Select a model or let the router choose automatically.',
+    {model:'worker',tokens:89,cost:0});
+})();
+</script>
+</body>
+</html>

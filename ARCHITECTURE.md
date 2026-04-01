@@ -48,6 +48,16 @@
 | IMAGE | flux-1-dev | Vast pod (ephemeral) | ComfyUI | Image generation | ~$0.03 |
 | VIDEO | wan-2.2-remix-nsfw | Vast pod (ephemeral) | ComfyUI | Video generation | ~$0.25 |
 
+## Free-Tier Model Routing (v7.5)
+
+| Tier | Model | Provider | Cost | Use Case |
+|---|---|---|---|---|
+| FREE_CODER | qwen3-coder-480b-a35b-instruct:free | OpenRouter | $0 | Code tasks, complexity < 6 |
+| FAST | gemini-3.1-flash-lite | OpenRouter | $0.25/$1.50 (1000 free/day) | Trivial Q&A, fast routing |
+| FALLBACK_FREE | gemini-2.0-flash | OpenRouter | $0.10/$0.40 (1000 free/day) | Budget exhaustion fallback |
+
+These tiers route ~70% of tasks to $0 infrastructure, reserving paid models for genuinely complex work.
+
 ---
 
 ## Routing Architecture (Two-Layer)

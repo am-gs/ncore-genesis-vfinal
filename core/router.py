@@ -15,6 +15,8 @@ log = structlog.get_logger()
 
 
 class ModelTier(Enum):
+    FAST       = "fast"
+    FREE_CODER = "free_coder"
     NANO       = "nano"
     SUPER      = "super"
     OPUS       = "opus"
@@ -39,12 +41,13 @@ class RouteDecision:
 
 class NCoreMasterRouter:
     """
-    5-layer routing:
-      L0: Media detection  → Vast pod (image / video)
-      L1: Fast heuristics  → NANO (trivial)
-      L2: Domain keyword   → OPUS | UNCENSORED | CODER
-      L3: Complexity score → OPUS (≥8) | SUPER
-      L4: Engine selection → SGLang (multi-turn) vs LMDeploy (first-call)
+    5-layer routing (v7.5):
+      L0:   Media detection    → Vast pod (image / video)
+      L1:   Fast heuristics    → FAST (Gemini 3.1 Flash Lite, trivial)
+      L1.5: Free code routing  → FREE_CODER (Qwen3 Coder 480B, complexity < 6)
+      L2:   Domain keyword     → OPUS | UNCENSORED | CODER
+      L3:   Complexity score   → OPUS (≥8) | SUPER
+      L4:   Engine selection   → SGLang (multi-turn) vs LMDeploy (first-call)
     """
 
     VIDEO_KW = [
@@ -129,14 +132,7 @@ class NCoreMasterRouter:
         if tokens < 100:
             for pat in self.TRIVIAL_RE:
                 if re.match(pat, text):
-                    return asdict(RouteDecision(
-                        tier="nano", model="nvidia/nemotron-nano-9b-v2",
-                        provider="openrouter",
-                        endpoint="https://openrouter.ai/api/v1",
-                        engine="lmdeploy",
-                        reason="Trivial heuristic — Nemotron Nano",
-                        estimated_cost_usd=0.00004
-                    ))
+                    return self._fast("Trivial heuristic")
         if any(kw in text for kw in self.OPUS_KW):
             return self._opus("High-stakes domain keyword")
         if any(kw in text for kw in self.UNFILTERED_KW):
@@ -149,6 +145,17 @@ class NCoreMasterRouter:
                 estimated_cost_usd=0.001
             ))
         if any(kw in text for kw in self.CODE_KW):
+            complexity = self._complexity(text, tokens)
+            if complexity < 6:
+                return asdict(RouteDecision(
+                    tier="free_coder",
+                    model=os.environ.get("FREE_CODER_MODEL", "qwen/qwen3-coder-480b-a35b-instruct:free"),
+                    provider="openrouter",
+                    endpoint="https://openrouter.ai/api/v1",
+                    engine="lmdeploy",
+                    reason=f"Code task (complexity {complexity}/10) → FREE_CODER",
+                    estimated_cost_usd=0.0
+                ))
             engine = "sglang" if turns > 2 else "lmdeploy"
             return asdict(RouteDecision(
                 tier="coder",
@@ -156,7 +163,7 @@ class NCoreMasterRouter:
                 provider="vast-serverless",
                 endpoint=os.environ.get("VAST_CODER_URL", "https://openrouter.ai/api/v1"),
                 engine=engine,
-                reason=f"Code task → Qwen3-Coder ({engine})",
+                reason=f"Code task (complexity {complexity}/10) → Qwen3-Coder ({engine})",
                 estimated_cost_usd=0.001
             ))
 
@@ -176,6 +183,17 @@ class NCoreMasterRouter:
             engine=engine,
             reason=f"{reason} | engine={engine}",
             estimated_cost_usd=0.002
+        ))
+
+    def _fast(self, reason: str) -> dict:
+        return asdict(RouteDecision(
+            tier="fast",
+            model=os.environ.get("FAST_MODEL", "google/gemini-3.1-flash-lite"),
+            provider="openrouter",
+            endpoint="https://openrouter.ai/api/v1",
+            engine="lmdeploy",
+            reason=f"{reason} | FAST tier",
+            estimated_cost_usd=0.00001
         ))
 
     def _opus(self, reason: str) -> dict:

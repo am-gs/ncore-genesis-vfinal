@@ -184,6 +184,13 @@ python3 -m venv "$NCORE_DIR/core/venv"
 # FIX: force source compilation of openshell to ensure C extensions are
 # built for this exact kernel/arch rather than using a pre-built wheel.
 "$NCORE_DIR/core/venv/bin/pip" install openshell --no-binary openshell
+# v7.5: Install Playwright for Camoufox + stealth OSINT tools
+"$NCORE_DIR/core/venv/bin/pip" install playwright
+"$NCORE_DIR/core/venv/bin/python" -m playwright install chromium
+
+# --- Phase 5.3: Install Camoufox stealth browser ---
+"$NCORE_DIR/core/venv/bin/python" -m camoufox fetch
+echo "[OK] Camoufox stealth browser installed"
 
 # --- Phase 5.5: Critical import verification ---
 "$NCORE_DIR/core/venv/bin/python" - <<'PYEOF'
