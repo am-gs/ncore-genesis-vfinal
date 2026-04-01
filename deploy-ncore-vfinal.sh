@@ -56,6 +56,7 @@ sudo sysctl --system
 
 # --- Phase 2: C-shims (crypt-shredder + TCP_NODELAY) ---
 mkdir -p "$NCORE_DIR/libs"
+chown -R "$USER:$USER" "$NCORE_DIR/libs" 2>/dev/null || true
 
 cat > "$NCORE_DIR/libs/crypt_shredder.c" <<'EOF'
 #define _GNU_SOURCE
