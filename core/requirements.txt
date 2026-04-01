@@ -33,13 +33,16 @@ optimum[onnxruntime]>=1.19
 transformers>=4.40
 sentence-transformers>=2.7
 
-# Browser stealth + async utilities
+# Browser stealth + async utilities (v7.5)
 camoufox
 vastai-sdk
-spiderfoot
-user-scanner
 aiofiles
 websockets
+psutil
+
+# OSINT tools (install separately — not on PyPI):
+# git clone https://github.com/smicallef/spiderfoot.git ~/spiderfoot && pip install -r ~/spiderfoot/requirements.txt
+# pip install git+https://github.com/kaifcodec/user-scanner.git
 
 # Vast.ai CLI (install separately via: pip install vastai)
 # Supabase (optional cost tracking): pip install supabase
