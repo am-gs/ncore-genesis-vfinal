@@ -1,11 +1,18 @@
-"""NCore Genesis — FastAPI + LangGraph Orchestrator v3.1
+"""NCore Genesis — FastAPI + LangGraph Orchestrator v3.2
 
-Audit fixes applied (March 26 2026):
-  C1 — Persistent httpx.AsyncClient with connection pooling (eliminates 100-300ms/req)
-  C2 — Fully async execution path via asyncio.to_thread for pod provisioner
-  M1 — tenacity retry (3 attempts, exponential backoff) on all LLM calls
-  M2 — structlog JSON logging (replaces stdlib logging)
-  H1 — AthenaMoERouter wired as secondary router for Vast self-hosted tier
+Fixes (v3.2 — March 31 2026):
+  - MoE router init crash: AthenaMoERouter now constructed with its registry
+  - MoE route() is async: node_route converted to async, graph uses .ainvoke()
+  - MoE route returns ModelConfig dataclass: access .name/.endpoint/.role not dict keys
+  - LangGraph async: graph compiled and invoked properly via ainvoke()
+  - Removed asyncio.to_thread(app_graph.invoke) anti-pattern
+
+Prior fixes retained (v3.1):
+  C1 — Persistent httpx.AsyncClient with connection pooling
+  C2 — Pod provisioner fully async (asyncio.create_subprocess_exec)
+  M1 — tenacity retry with exponential backoff on LLM calls
+  M2 — structlog JSON logging
+  H1 — AthenaMoERouter wired for Vast self-hosted tier model selection
 """
 from __future__ import annotations
 import asyncio, os, time
@@ -25,7 +32,7 @@ from tenacity import (
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 
 from router import NCoreMasterRouter
-from moe_router import AthenaMoERouter        # H1: now wired in
+from moe_router import AthenaMoERouter, NCoreModelRegistry  # H1: wired in
 from pod_provisioner import DynamicPodProvisioner
 from metrics import (
     REQUEST_COUNTER, REQUEST_LATENCY, ROUTE_TIER_COUNTER,
@@ -58,10 +65,10 @@ async def lifespan(app: FastAPI):
     await MOE_ROUTER.disconnect_cache()
     log.info("ncore.shutdown")
 
-app = FastAPI(title="NCore Genesis", version="3.1", lifespan=lifespan)
+app = FastAPI(title="NCore Genesis", version="3.2", lifespan=lifespan)
 
 MASTER_ROUTER = NCoreMasterRouter()
-MOE_ROUTER    = AthenaMoERouter()             # H1
+MOE_ROUTER    = AthenaMoERouter(NCoreModelRegistry())  # H1: must pass registry
 PROVISIONER   = DynamicPodProvisioner()
 
 # ── State ─────────────────────────────────────────────────────────────────────
@@ -85,18 +92,18 @@ async def _call_llm(client: httpx.AsyncClient, endpoint: str, headers: dict, pay
     r.raise_for_status()
     return r.json()["choices"][0]["message"]["content"]
 
-# ── LangGraph nodes ───────────────────────────────────────────────────────────
-def node_route(state: AgentState) -> AgentState:
+# ── LangGraph nodes (both async for ainvoke compatibility) ────────────────────
+async def node_route(state: AgentState) -> AgentState:
     with ROUTING_LATENCY.time():
         decision = MASTER_ROUTER.route(state["task"], state.get("turns", 0))
 
     # H1: for Vast self-hosted tier, defer model selection to MoE router
     if decision["provider"] == "vast-serverless":
-        moe = MOE_ROUTER.route(state["task"])
-        decision["model"]    = moe["model_name"]
-        decision["endpoint"] = moe["endpoint"]
-        decision["engine"]   = moe["role"]
-        increment_metric_safe(CACHE_HITS)      # placeholder — replace with real hit signal
+        moe_result = await MOE_ROUTER.route(state["task"])  # async — returns ModelConfig
+        decision["model"]    = moe_result.name       # ModelConfig.name
+        decision["endpoint"] = moe_result.endpoint   # ModelConfig.endpoint
+        decision["engine"]   = moe_result.role        # ModelConfig.role
+        increment_metric_safe(CACHE_HITS)
     else:
         increment_metric_safe(CACHE_MISSES)
 
@@ -114,8 +121,8 @@ async def node_execute(state: AgentState) -> AgentState:   # C2: now truly async
     # ── POD tasks ─────────────────────────────────────────────────────────────
     if d.get("requires_pod"):
         spec = d["pod_spec"]
-        # C2: run blocking provisioner in thread pool
-        result = await asyncio.to_thread(PROVISIONER.run, spec["type"], state["task"])
+        # C2: provisioner is now fully async (H4 fix)
+        result = await PROVISIONER.run(spec["type"], state["task"])
         latency = time.time() - t0
         if result.success:
             url    = result.output.get("video_url") or result.output.get("image_url", "")
@@ -156,10 +163,10 @@ async def node_execute(state: AgentState) -> AgentState:   # C2: now truly async
     return {**state, "output": output, "cost_usd": cost, "latency_s": latency}
 
 
-# ── Graph ─────────────────────────────────────────────────────────────────────
+# ── Graph (async nodes → use ainvoke) ─────────────────────────────────────────
 _builder = StateGraph(AgentState)
-_builder.add_node("route",   node_route)
-_builder.add_node("execute", node_execute)
+_builder.add_node("route",   node_route)    # async
+_builder.add_node("execute", node_execute)  # async
 _builder.set_entry_point("route")
 _builder.add_edge("route", "execute")
 _builder.add_edge("execute", END)
@@ -182,8 +189,8 @@ async def run(req: RunRequest):
             "cost_usd":  0.0,
             "latency_s": 0.0,
         }
-        # C2: use async invoke (LangGraph ≥0.2 supports async nodes directly)
-        final = await asyncio.to_thread(app_graph.invoke, init)
+        # Async graph: ainvoke runs async nodes natively, no thread pool needed
+        final = await app_graph.ainvoke(init)
     return {
         "output":    final["output"],
         "route":     final["route"],
@@ -193,7 +200,7 @@ async def run(req: RunRequest):
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "version": "3.1"}
+    return {"status": "ok", "version": "3.2"}
 
 @app.get("/metrics")
 async def metrics():

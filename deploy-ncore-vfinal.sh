@@ -125,7 +125,7 @@ int xdp_drop_unauthorized(struct xdp_md *ctx) {
     if ((void *)tcp + sizeof(*tcp) > data_end) return XDP_PASS;
     if (tcp->syn && !tcp->ack) {
         int port = bpf_htons(tcp->dest);
-        if (port != 22 && port != 5678 && port != 8080)
+        if (port != 22 && port != 443 && port != 8080)
             return XDP_DROP;
     }
     return XDP_PASS;

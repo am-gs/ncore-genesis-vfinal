@@ -1,20 +1,20 @@
-# NCore Genesis vFinal — Consensus Architecture v3.1 (March 2026)
+# NCore Genesis vFinal — Consensus Architecture v3.2 (March 2026)
 
 ## Audit Status
 
 | Issue | Severity | Status |
 |-------|----------|--------|
 | C1: httpx connection pooling | Critical | ✅ Fixed |
-| C2: Async event loop unblocking | Critical | ✅ Fixed |
+| C2: Async event loop unblocking | Critical | ✅ Fixed — ainvoke() + async nodes |
 | C3: Bare except: in budget guard | Critical | ✅ Fixed |
-| H1: moe_router.py dead code | High | ✅ Fixed — wired as secondary router |
+| H1: moe_router.py dead code | High | ✅ Fixed — wired with NCoreModelRegistry |
 | H2: Missing requirements | High | ✅ Fixed |
 | H3: Qwen2.5 → Qwen3-Coder | High | ✅ Fixed |
 | H4: Sync subprocess in async path | High | ✅ Fixed — asyncio.create_subprocess_exec |
 | M1: No retry logic | Medium | ✅ Fixed — tenacity (3 attempts, exp backoff) |
 | M2: Unstructured stdlib logging | Medium | ✅ Fixed — structlog JSON |
 | M3: Missing metrics for MoE router | Medium | ✅ Fixed |
-| M4: XDP port 5678 unused | Medium | See deploy script note |
+| M4: XDP port 5678 → 443 | Medium | ✅ Fixed — allows 443 for HTTPS/Caddy |
 | L1: CPU affinity single core | Low | No change — acceptable for single-user |
 | L2: No .env.example | Low | ✅ Fixed |
 | L3: XDP redundant vs 127.0.0.1 bind | Low | Defense-in-depth intentional |
