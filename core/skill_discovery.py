@@ -242,6 +242,10 @@ async def auto_install(tool: dict) -> bool:
 
 async def discover_and_equip(task: str) -> list[dict]:
     """Main entry: discover tools for *task*, install missing, persist to Redis."""
+    cached = await check_cache(task)
+    if cached:
+        return cached
+
     tools = await discover_tools(task)
     if not tools:
         log.info("discovery.no_tools_found", task=task)
@@ -269,4 +273,47 @@ async def discover_and_equip(task: str) -> list[dict]:
         found=len(tools),
         installed=len(newly_installed),
     )
+    await record_discovery(task, newly_installed)
     return newly_installed
+
+
+# ── Learning / caching layer ─────────────────────────────────────────────
+async def record_discovery(task_pattern: str, tools_used: list[dict]) -> None:
+    """Cache a successful tool discovery so the system learns and never re-searches
+    for the same pattern. Stored in Redis for cross-session persistence."""
+    if not tools_used:
+        return
+    try:
+        r = _redis()
+        # Store pattern → tools mapping
+        key = f"ncore:skill_cache:{task_pattern[:100]}"
+        value = json.dumps([{"name": t.get("name"), "source": t.get("source"),
+                            "install_command": t.get("install_command")} for t in tools_used])
+        await r.set(key, value, ex=86400 * 30)  # Cache for 30 days
+
+        # Track all known patterns for the evolution loop
+        await r.sadd("ncore:skill_patterns", task_pattern[:100])
+
+        log.info("skill_discovery.cached", pattern=task_pattern[:50], tools=len(tools_used))
+        await r.aclose()
+    except Exception as e:
+        log.warning("skill_discovery.cache_failed", error=str(e))
+
+
+async def check_cache(task_description: str) -> list[dict] | None:
+    """Check if we've already discovered tools for a similar task pattern."""
+    try:
+        r = _redis()
+        # Simple prefix matching on task keywords
+        keywords = sorted(set(task_description.lower().split()[:5]))
+        pattern = " ".join(keywords)
+        key = f"ncore:skill_cache:{pattern[:100]}"
+        cached = await r.get(key)
+        await r.aclose()
+        if cached:
+            tools = json.loads(cached)
+            log.info("skill_discovery.cache_hit", pattern=pattern[:50], tools=len(tools))
+            return tools
+    except Exception:
+        pass
+    return None

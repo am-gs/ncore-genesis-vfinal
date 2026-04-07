@@ -95,6 +95,16 @@ echo "────────────────────────�
 echo "[OK] Python deps installed"
 
 echo ""
+echo "[Phase 4.5/7] Installing core skill stack..."
+echo "─────────────────────────────────────────────"
+if [ -f "$NCORE_DIR/core/preinstalled_skills.sh" ]; then
+    chmod +x "$NCORE_DIR/core/preinstalled_skills.sh"
+    bash "$NCORE_DIR/core/preinstalled_skills.sh" || echo "[WARN] Some skills failed to install — will be discovered at runtime"
+else
+    echo "[SKIP] preinstalled_skills.sh not found"
+fi
+
+echo ""
 echo "[Phase 5/7] Installing systemd services..."
 echo "────────────────────────────────────────────"
 
