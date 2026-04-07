@@ -430,7 +430,10 @@ async def enhance(
     # Append extracted indicators if any were found
     found_indicators = {k: v for k, v in indicators.items() if v}
     if found_indicators:
-        indicator_lines = "\n".join(f"- **{k}**: {', '.join(v)}" for k, v in found_indicators.items())
+        indicator_lines = "\n".join(
+            f"- **{k}**: {', '.join(str(i) for i in v) if isinstance(v, list) else str(v)}"
+            for k, v in found_indicators.items()
+        )
         parts.append(f"\n### EXTRACTED INDICATORS\n{indicator_lines}")
 
     parts.append(f"\n### REQUIRED OUTPUT FORMAT\n{template}")

@@ -51,3 +51,4 @@ psutil
 
 # Vast.ai CLI (install separately via: pip install vastai)
 # Supabase (optional cost tracking): pip install supabase
+python-multipart

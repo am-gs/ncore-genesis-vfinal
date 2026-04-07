@@ -62,7 +62,7 @@ class AgentZeroBridge:
             if system_prompt:
                 payload["system"] = system_prompt
 
-            r = await self.client.post("/message", json=payload, timeout=timeout)
+            r = await self.client.post("/api_message", json=payload, timeout=timeout)
             r.raise_for_status()
             data = r.json()
 
