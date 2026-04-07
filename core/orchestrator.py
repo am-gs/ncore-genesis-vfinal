@@ -44,7 +44,8 @@ from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 
 from router import NCoreMasterRouter
 from moe_router import AthenaMoERouter, NCoreModelRegistry  # H1: wired in
-from pod_provisioner import DynamicPodProvisioner
+from comfyui_bridge import ComfyUIBridge
+from gpu_manager import GPUManager
 from metrics import (
     REQUEST_COUNTER, REQUEST_LATENCY, ROUTE_TIER_COUNTER,
     ROUTING_LATENCY, CACHE_HITS, CACHE_MISSES,
@@ -90,7 +91,13 @@ DASHBOARD_DIR = pathlib.Path(__file__).resolve().parent.parent / "dashboard"
 
 MASTER_ROUTER = NCoreMasterRouter()
 MOE_ROUTER    = AthenaMoERouter(NCoreModelRegistry())  # H1: must pass registry
-PROVISIONER   = DynamicPodProvisioner()
+try:
+    GPU_MANAGER = GPUManager()
+    COMFYUI = ComfyUIBridge(gpu_manager=GPU_MANAGER)
+except Exception as e:
+    log.warning("gpu_init_deferred", error=str(e))
+    GPU_MANAGER = None
+    COMFYUI = None
 
 # ── State ─────────────────────────────────────────────────────────────────────
 class AgentState(TypedDict):
@@ -183,17 +190,50 @@ async def node_execute(state: AgentState) -> AgentState:   # C2: now truly async
 
     # ── POD tasks ─────────────────────────────────────────────────────────────
     if d.get("requires_pod"):
-        spec = d["pod_spec"]
-        # C2: provisioner is now fully async (H4 fix)
-        result = await PROVISIONER.run(spec["type"], state["task"])
-        latency = time.time() - t0
-        if result.success:
-            url    = result.output.get("video_url") or result.output.get("image_url", "")
-            output = f"✅ {spec['type'].title()} ready in {result.runtime_seconds:.0f}s\n🔗 {url}"
-        else:
-            output = f"❌ {spec['type'].title()} failed: {result.error}"
-        update_cost(d["tier"], result.cost_usd)
-        return {**state, "output": output, "cost_usd": result.cost_usd, "latency_s": latency}
+        spec = d.get("pod_spec", {})
+        pod_type = spec.get("type", "image")
+
+        if COMFYUI is None:
+            output = "❌ GPU manager not initialized (check VAST_API_KEY)"
+            return {**state, "output": output, "cost_usd": 0, "latency_s": time.time() - t0}
+
+        try:
+            if pod_type == "video":
+                # Extract video params from pod_spec
+                hd = spec.get("hd", False) or spec.get("model", "").endswith("14b")
+                result = await COMFYUI.generate_video(
+                    prompt=state["task"],
+                    negative=spec.get("negative", ""),
+                    width=spec.get("width", 832),
+                    height=spec.get("height", 480),
+                    frames=spec.get("frames", 81),
+                    steps=spec.get("steps", 30),
+                    hd=hd,
+                    task_id=f"video_{int(time.time())}",
+                )
+                output = f"✅ Video generated in {result['duration_s']:.0f}s | GPU: {result['gpu_profile']} | Cost: ${result['cost_usd']:.4f}\n📁 {result['output_path']}"
+                cost = result["cost_usd"]
+            else:
+                result = await COMFYUI.generate_image(
+                    prompt=state["task"],
+                    negative=spec.get("negative", ""),
+                    width=spec.get("width", 1024),
+                    height=spec.get("height", 1024),
+                    steps=spec.get("steps", 20),
+                    task_id=f"img_{int(time.time())}",
+                )
+                output = f"✅ Image generated in {result['duration_s']:.0f}s | GPU: {result['gpu_profile']} | Cost: ${result['cost_usd']:.4f}\n📁 {result['output_path']}"
+                cost = result["cost_usd"]
+
+            latency = time.time() - t0
+            update_cost(d["tier"], cost)
+            await broadcast_ws({"type": "gpu_complete", "data": {"pod_type": pod_type, "duration_s": result["duration_s"], "cost_usd": cost, "gpu_profile": result["gpu_profile"]}})
+            return {**state, "output": output, "cost_usd": cost, "latency_s": latency}
+
+        except Exception as e:
+            log.error("ncore.gpu_error", error=str(e), pod_type=pod_type)
+            output = f"❌ {pod_type.title()} generation failed: {e}"
+            return {**state, "output": output, "cost_usd": 0, "latency_s": time.time() - t0}
 
     # ── OLLAMA tasks (local uncensored) (FIX 3) ──────────────────────────────
     if d["provider"] == "ollama":

@@ -174,7 +174,10 @@ class ComfyUIBridge:
 
         log.info("comfyui.video.start", prompt=prompt[:80], profile=profile, task_id=tid)
 
-        instance = await self.gpu.provision(profile, tid)
+        instance = await self.gpu.smart_provision(
+            "video_hd" if hd else "video",
+            tid,
+        )
         instance_id = instance["instance_id"]
 
         try:
@@ -210,7 +213,10 @@ class ComfyUIBridge:
 
         log.info("comfyui.image.start", prompt=prompt[:80], task_id=tid)
 
-        instance = await self.gpu.provision("image-gen", tid)
+        instance = await self.gpu.smart_provision(
+            "image",
+            tid,
+        )
         instance_id = instance["instance_id"]
 
         try:

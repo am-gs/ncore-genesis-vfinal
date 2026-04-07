@@ -107,6 +107,30 @@ class GPUManager:
                  profile=profile, requirements=requirements)
         return profile
 
+    async def smart_provision(self, task_type: str, task_id: str,
+                               requirements: dict = None) -> dict:
+        """Intelligent provisioning: auto-selects profile, prefers interruptible,
+        reuses running instances when possible."""
+        requirements = requirements or {}
+
+        # Check if we have a running instance that matches
+        for tid, info in self.active_instances.items():
+            profile_needed = await self.select_profile(task_type, requirements)
+            if info["profile"] == profile_needed:
+                log.info("gpu_manager.reuse_instance", task_id=task_id,
+                         existing_task=tid, instance_id=info["instance_id"])
+                return {
+                    "instance_id": info["instance_id"],
+                    "ip": info["ip"],
+                    "port": info["port"],
+                    "cost_per_hour": info["cost_per_hour"],
+                    "gpu_name": info["gpu_name"],
+                    "reused": True,
+                }
+
+        profile = await self.select_profile(task_type, requirements)
+        return await self.provision(profile, task_id)
+
     # ── Provisioning ──────────────────────────────────────────────────────────
 
     async def provision(self, profile_name: str, task_id: str) -> dict:
@@ -307,7 +331,10 @@ class GPUManager:
 
         try:
             offers = await asyncio.to_thread(
-                self.vast.search_offers, query=profile["query"],
+                self.vast.search_offers,
+                query=profile["query"],
+                order="dph",
+                limit=10,
             )
         except Exception as e:
             log.error("gpu_manager.search_offers.failed", profile=profile_name,
@@ -322,10 +349,12 @@ class GPUManager:
         if not offer_list:
             return None
 
+        # Sort by cost, prefer interruptible for batch work
         cheapest = min(offer_list, key=lambda o: o.get("dph_total", float("inf")))
         log.info("gpu_manager.cheapest_offer", profile=profile_name,
                  offer_id=cheapest.get("id"), dph=cheapest.get("dph_total"),
-                 gpu=cheapest.get("gpu_name"))
+                 gpu=cheapest.get("gpu_name"),
+                 interruptible=cheapest.get("rentable", True))
         return cheapest
 
     # ── Cost tracking ─────────────────────────────────────────────────────────
@@ -342,7 +371,7 @@ class GPUManager:
         try:
             import redis.asyncio as aioredis
 
-            r = aioredis.Redis(unix_socket_path="/var/run/redis/redis.sock")
+            r = aioredis.Redis(unix_socket_path=os.environ.get("NCORE_REDIS_UDS", "/var/run/redis/redis-server.sock"))
             await r.hset("ncore:gpu:session_cost",
                          mapping={"total": str(self._session_cost)})
             for task_id, cost in self._task_costs.items():
