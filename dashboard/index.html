@@ -10,8 +10,8 @@
   const path = require('path');
   const { createProxyMiddleware } = require('http-proxy-middleware');
   // npm install http-proxy-middleware
-  const GATEWAY = process.env.NCORE_GATEWAY || 'http://localhost:8000';
-  const PORT = 3000;
+  const GATEWAY = process.env.NCORE_GATEWAY || 'http://localhost:8080';
+  const PORT = 3002;
   const server = http.createServer((req, res) => {
     if (req.url === '/' || req.url === '/index.html') {
       res.writeHead(200, { 'Content-Type': 'text/html' });
@@ -31,7 +31,7 @@
   server.on('upgrade', (req, socket, head) => {
     const net = require('net');
     const u = new URL(GATEWAY);
-    const upstream = net.connect(u.port || 8000, u.hostname, () => {
+    const upstream = net.connect(u.port || 8080, u.hostname, () => {
       upstream.write(`GET /ws HTTP/1.1\r\nHost: ${u.host}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n` +
         `Sec-WebSocket-Key: ${req.headers['sec-websocket-key']}\r\nSec-WebSocket-Version: 13\r\n\r\n`);
       upstream.pipe(socket); socket.pipe(upstream);
@@ -330,6 +330,15 @@ button{cursor:pointer}
 </div><!-- .app -->
 
 <script>
+// Auto-detect API base URL — works whether served from gateway (:8080) or standalone (:3002)
+const API_BASE = (function() {
+    const port = parseInt(location.port);
+    // If served from the gateway (8080), use relative URLs
+    if (port === 8080 || !port) return '';
+    // If served standalone (3002), proxy to gateway
+    return 'http://' + location.hostname + ':8080';
+})();
+
 // ===== STATE =====
 const S = {
   ws: null, wsOk: false, pollTimer: null,
@@ -461,7 +470,7 @@ async function sendMessage(){
   termWrite('$ POST /run task="'+text.slice(0,60)+(text.length>60?'...':'')+'"','term-cmd');
 
   try{
-    const res=await fetch('/run',{
+    const res=await fetch(API_BASE+'/run',{
       method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({task:text,model_hint:model,turns:10})
     });
@@ -544,7 +553,8 @@ document.querySelectorAll('.lp-nav a').forEach(a=>{
 // ===== WEBSOCKET =====
 function connectWS(){
   try{
-    S.ws=new WebSocket((location.protocol==='https:'?'wss:':'ws:')+'//'+location.host+'/ws');
+    const wsHost = API_BASE ? new URL(API_BASE).host : location.host;
+    S.ws=new WebSocket((location.protocol==='https:'?'wss:':'ws:')+'//'+wsHost+'/ws');
     S.ws.onopen=()=>{
       S.wsOk=true;$('term-status').className='dot up';
       termWrite('WebSocket connected','term-info');
@@ -593,8 +603,8 @@ function startPolling(){
   S.pollTimer=setInterval(async()=>{
     try{
       const [h,m]=await Promise.all([
-        fetch('/health').then(r=>r.json()).catch(()=>null),
-        fetch('/metrics').then(r=>r.text()).catch(()=>null)
+        fetch(API_BASE+'/health').then(r=>r.json()).catch(()=>null),
+        fetch(API_BASE+'/metrics').then(r=>r.text()).catch(()=>null)
       ]);
       if(h)updateServiceStatus(h);
       if(m)parsePrometheusMetrics(m);

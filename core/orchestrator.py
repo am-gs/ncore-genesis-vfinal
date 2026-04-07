@@ -1,6 +1,14 @@
-"""NCore Genesis — FastAPI + LangGraph Orchestrator v3.2
+"""NCore Genesis — FastAPI + LangGraph Orchestrator v3.3
 
-Fixes (v3.2 — March 31 2026):
+Fixes (v3.3 — April 7 2026):
+  - Dashboard served from FastAPI on port 8080 (eliminates CORS/proxy issues)
+  - CORS middleware for external clients
+  - WebSocket /ws endpoint for real-time dashboard updates
+  - Ollama provider support in node_execute
+  - Prompt enhancer wired into LangGraph pipeline (route → enhance → execute)
+  - Agent Zero delegation for complex opus-tier tasks
+
+Prior fixes retained (v3.2):
   - MoE router init crash: AthenaMoERouter now constructed with its registry
   - MoE route() is async: node_route converted to async, graph uses .ainvoke()
   - MoE route returns ModelConfig dataclass: access .name/.endpoint/.role not dict keys
@@ -15,12 +23,15 @@ Prior fixes retained (v3.1):
   H1 — AthenaMoERouter wired for Vast self-hosted tier model selection
 """
 from __future__ import annotations
-import asyncio, os, time
+import asyncio, os, time, pathlib
+import json as json_lib
 from contextlib import asynccontextmanager
 from typing import TypedDict
 
-from fastapi import FastAPI
-from fastapi.responses import Response
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response, FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from langgraph.graph import StateGraph, END
 import httpx
@@ -65,7 +76,17 @@ async def lifespan(app: FastAPI):
     await MOE_ROUTER.disconnect_cache()
     log.info("ncore.shutdown")
 
-app = FastAPI(title="NCore Genesis", version="3.2", lifespan=lifespan)
+app = FastAPI(title="NCore Genesis", version="3.3", lifespan=lifespan)
+
+# ── CORS middleware (FIX 1) ──────────────────────────────────────────────────
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+DASHBOARD_DIR = pathlib.Path(__file__).resolve().parent.parent / "dashboard"
 
 MASTER_ROUTER = NCoreMasterRouter()
 MOE_ROUTER    = AthenaMoERouter(NCoreModelRegistry())  # H1: must pass registry
@@ -92,7 +113,22 @@ async def _call_llm(client: httpx.AsyncClient, endpoint: str, headers: dict, pay
     r.raise_for_status()
     return r.json()["choices"][0]["message"]["content"]
 
-# ── LangGraph nodes (both async for ainvoke compatibility) ────────────────────
+# ── WebSocket support (FIX 2) ─────────────────────────────────────────────────
+ws_clients: list[WebSocket] = []
+
+async def broadcast_ws(event: dict):
+    """Broadcast an event to all connected dashboard clients."""
+    message = json_lib.dumps(event)
+    dead = []
+    for ws in ws_clients:
+        try:
+            await ws.send_text(message)
+        except Exception:
+            dead.append(ws)
+    for ws in dead:
+        ws_clients.remove(ws)
+
+# ── LangGraph nodes ──────────────────────────────────────────────────────────
 async def node_route(state: AgentState) -> AgentState:
     with ROUTING_LATENCY.time():
         decision = MASTER_ROUTER.route(state["task"], state.get("turns", 0))
@@ -111,7 +147,34 @@ async def node_route(state: AgentState) -> AgentState:
              tier=decision["tier"], model=decision["model"],
              engine=decision.get("engine"), reason=decision["reason"])
     ROUTE_TIER_COUNTER.labels(tier=decision["tier"]).inc()
+    await broadcast_ws({"type": "route", "data": decision})
     return {**state, "route": decision}
+
+
+async def node_enhance(state: AgentState) -> AgentState:
+    """Heuristic prompt enhancement before LLM execution (FIX 4)."""
+    d = state["route"]
+    # Skip enhancement for trivial/fast tier and media tasks
+    if d["tier"] in ("fast", "image", "video"):
+        return state
+
+    try:
+        r = await app.state.http.post(
+            "http://localhost:8081/enhance",
+            json={"prompt": state["task"], "context": "", "task_id": ""},
+            timeout=10.0,
+        )
+        if r.status_code == 200:
+            enhanced = r.json()
+            enhanced_prompt = enhanced.get("enhanced", state["task"])
+            log.info("ncore.enhance", domains=enhanced.get("domains"),
+                     critic_score=enhanced.get("critic_score", -1))
+            await broadcast_ws({"type": "enhance", "data": {"domains": enhanced.get("domains"), "critic_score": enhanced.get("critic_score", -1)}})
+            return {**state, "task": enhanced_prompt}
+    except Exception as e:
+        log.warning("ncore.enhance_skip", error=str(e))
+
+    return state  # Fall through if enhancer is down
 
 
 async def node_execute(state: AgentState) -> AgentState:   # C2: now truly async
@@ -131,6 +194,48 @@ async def node_execute(state: AgentState) -> AgentState:   # C2: now truly async
             output = f"❌ {spec['type'].title()} failed: {result.error}"
         update_cost(d["tier"], result.cost_usd)
         return {**state, "output": output, "cost_usd": result.cost_usd, "latency_s": latency}
+
+    # ── OLLAMA tasks (local uncensored) (FIX 3) ──────────────────────────────
+    if d["provider"] == "ollama":
+        try:
+            ollama_payload = {
+                "model": d["model"],
+                "messages": [{"role": "user", "content": state["task"]}],
+                "stream": False,
+            }
+            r = await app.state.http.post(
+                f"{d['endpoint']}/api/chat",
+                json=ollama_payload,
+                timeout=120.0
+            )
+            r.raise_for_status()
+            output = r.json().get("message", {}).get("content", "")
+        except Exception as e:
+            log.error("ncore.ollama_error", error=str(e), model=d["model"])
+            output = f"[Ollama error] {e}"
+        latency = time.time() - t0
+        cost = 0.0
+        update_cost(d["tier"], cost)
+        log.info("ncore.execute", tier=d["tier"], latency_s=round(latency, 3), cost_usd=cost)
+        await broadcast_ws({"type": "result", "data": {"tier": d["tier"], "model": d["model"], "latency_s": round(latency, 3), "cost_usd": cost, "output_preview": output[:200]}})
+        return {**state, "output": output, "cost_usd": cost, "latency_s": latency}
+
+    # ── AGENT ZERO delegation (complex multi-step tasks) (FIX 5) ─────────────
+    if d["tier"] == "opus" and os.environ.get("AGENT_ZERO_URL"):
+        try:
+            from agent_zero_bridge import AgentZeroBridge
+            az = AgentZeroBridge()
+            if await az.is_available():
+                result = await az.execute_task(state["task"])
+                if result["success"]:
+                    latency = time.time() - t0
+                    update_cost(d["tier"], d["estimated_cost_usd"])
+                    await broadcast_ws({"type": "agent_zero", "data": {"steps": len(result["steps"]), "duration_s": result["duration_s"]}})
+                    return {**state, "output": result["output"], "cost_usd": d["estimated_cost_usd"], "latency_s": latency}
+            await az.close()
+        except Exception as e:
+            log.warning("ncore.agent_zero_fallback", error=str(e))
+        # Fall through to regular LLM if Agent Zero fails
 
     # ── LLM tasks ─────────────────────────────────────────────────────────────
     api_key = (
@@ -160,15 +265,18 @@ async def node_execute(state: AgentState) -> AgentState:   # C2: now truly async
     cost    = d["estimated_cost_usd"]
     update_cost(d["tier"], cost)
     log.info("ncore.execute", tier=d["tier"], latency_s=round(latency, 3), cost_usd=cost)
+    await broadcast_ws({"type": "result", "data": {"tier": d["tier"], "model": d["model"], "latency_s": round(latency, 3), "cost_usd": cost, "output_preview": output[:200] if isinstance(output, str) else ""}})
     return {**state, "output": output, "cost_usd": cost, "latency_s": latency}
 
 
 # ── Graph (async nodes → use ainvoke) ─────────────────────────────────────────
 _builder = StateGraph(AgentState)
 _builder.add_node("route",   node_route)    # async
+_builder.add_node("enhance", node_enhance)  # async — FIX 4
 _builder.add_node("execute", node_execute)  # async
 _builder.set_entry_point("route")
-_builder.add_edge("route", "execute")
+_builder.add_edge("route", "enhance")       # route → enhance
+_builder.add_edge("enhance", "execute")     # enhance → execute
 _builder.add_edge("execute", END)
 app_graph = _builder.compile()
 
@@ -200,7 +308,7 @@ async def run(req: RunRequest):
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "version": "3.2"}
+    return {"status": "ok", "version": "3.3"}
 
 @app.get("/ready")
 async def readiness_check():
@@ -209,7 +317,7 @@ async def readiness_check():
     client = app.state.http
 
     # 1. Gateway itself
-    checks["gateway"] = {"status": "ok", "version": "3.2"}
+    checks["gateway"] = {"status": "ok", "version": "3.3"}
 
     # 2. Redis
     try:
@@ -283,6 +391,30 @@ async def readiness_check():
 @app.get("/metrics")
 async def metrics():
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+# ── WebSocket endpoint (FIX 2) ───────────────────────────────────────────────
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    ws_clients.append(websocket)
+    try:
+        while True:
+            # Keep connection alive, receive any client messages
+            data = await websocket.receive_text()
+            # Echo back acknowledgment
+            await websocket.send_text(json_lib.dumps({"type": "ack", "data": data}))
+    except WebSocketDisconnect:
+        ws_clients.remove(websocket)
+    except Exception:
+        if websocket in ws_clients:
+            ws_clients.remove(websocket)
+
+# ── Dashboard static serving (FIX 1) ─────────────────────────────────────────
+if DASHBOARD_DIR.exists():
+    @app.get("/dashboard")
+    @app.get("/dashboard/{path:path}")
+    async def dashboard(path: str = ""):
+        return FileResponse(DASHBOARD_DIR / "index.html")
 
 if __name__ == "__main__":
     import uvicorn

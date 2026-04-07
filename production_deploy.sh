@@ -164,7 +164,7 @@ RestartSec=5
 WantedBy=multi-user.target
 SEOF
 
-# Dashboard
+# Dashboard (optional standalone — primary access is via gateway at :8080/dashboard)
 sudo tee /etc/systemd/system/ncore-dashboard.service > /dev/null << SEOF
 [Unit]
 Description=NCore Genesis v7.6 — Mission Control Dashboard
@@ -241,13 +241,13 @@ echo "  NCore Genesis v7.6 — Production Deploy Complete"
 echo ""
 echo "  Services:"
 echo "    Gateway:        http://127.0.0.1:8080"
-echo "    Dashboard:      http://127.0.0.1:3002"
+echo "    Dashboard:      http://127.0.0.1:8080/dashboard (primary) | http://127.0.0.1:3002 (standalone)"
 echo "    Prompt Enhancer: http://127.0.0.1:8081"
 echo "    Agent Zero:     http://127.0.0.1:8090"
 echo ""
 echo "  Via Tailscale:"
 echo "    ssh ncore"
-echo "    http://ncore-v2:3002  (dashboard)"
+echo "    http://ncore-v2:8080/dashboard"
 echo "    http://ncore-v2:8090  (agent zero)"
 echo ""
 echo "  Logs:"
