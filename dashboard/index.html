@@ -1,5 +1,5 @@
 <!--
-  NCore Genesis v7.5 — Manus.im-Clone Mission Control Dashboard
+  NCore Genesis v7.6 — Manus.im-Clone Mission Control Dashboard
   Single-file, zero-dependency, dark-themed three-panel dashboard.
 
   === Node.js Proxy Server (optional) ===
@@ -243,7 +243,7 @@ button{cursor:pointer}
     <div class="status-row"><span class="dot unknown" id="st-ollama"></span>Ollama</div>
     <div class="status-row"><span class="dot unknown" id="st-redis"></span>Redis</div>
     <div class="status-row"><span class="dot unknown" id="st-gateway"></span>Gateway</div>
-    <div class="status-row"><span class="dot unknown" id="st-openclaw"></span>OpenClaw</div>
+    <div class="status-row"><span class="dot unknown" id="st-openclaw"></span>Agent Zero</div>
   </div>
   <div class="lp-section">
     <h3>Session History</h3>
@@ -262,8 +262,8 @@ button{cursor:pointer}
           <select id="model-select">
             <option value="local">Local (Dark Champion)</option>
             <option value="free">Free (Qwen3 Coder)</option>
-            <option value="fast">Fast (Gemini Flash Lite)</option>
-            <option value="worker" selected>Worker (DeepSeek R1)</option>
+            <option value="fast" selected>Fast (GPT-OSS 20B)</option>
+            <option value="worker">Worker (DeepSeek R1)</option>
             <option value="opus">Opus (Claude 4.6)</option>
           </select>
           <span class="input-hint">Enter to send &middot; Ctrl+Enter for newline</span>
@@ -325,7 +325,7 @@ button{cursor:pointer}
   <div class="bb-sep"></div>
   <div class="bb-item">Uptime: <span id="bb-uptime">00:00:00</span></div>
   <div style="flex:1"></div>
-  <div class="bb-item" style="color:var(--text3)">NCore Genesis v7.5</div>
+  <div class="bb-item" style="color:var(--text3)">NCore Genesis v7.6</div>
 </div>
 </div><!-- .app -->
 
@@ -350,8 +350,8 @@ const S = {
 };
 
 const MODELS = {
-  local:'Local (Dark Champion)',free:'Free (Qwen3 Coder)',fast:'Fast (Gemini Flash Lite)',
-  worker:'Worker (DeepSeek R1)',opus:'Opus (Claude 4.6)'
+  local:'Local (Dark Champion + Qwen3.5)',free:'Free (Qwen3 Coder 480B)',
+  fast:'Fast (GPT-OSS 20B)',worker:'Worker (DeepSeek V3.2)',opus:'Opus (Claude 4.6)'
 };
 const MODEL_COLORS = {local:'#e3b341',free:'#3fb950',fast:'#58a6ff',worker:'#bc8cff',opus:'#f47067'};
 
@@ -488,30 +488,84 @@ async function sendMessage(){
 }
 
 function handleRunResponse(data,model){
-  if(data.steps&&Array.isArray(data.steps)){
-    data.steps.forEach(step=>{
-      if(step.type==='tool_call'){
-        addMsg('tool',step.result||'',{model,toolName:step.tool,args:step.args});
-        termWrite('> '+step.tool+' '+JSON.stringify(step.args||{}),'term-info');
-        if(step.result)termWrite(String(step.result).slice(0,500));
-      }else if(step.type==='thinking'){
-        // merge with next output
-      }else{
-        addMsg('agent',step.content||step.text||JSON.stringify(step),{model,tokens:step.tokens,cost:step.cost});
-      }
-    });
-  }
-  if(data.output||data.result){
-    const out=data.output||data.result;
-    const tok=data.total_tokens||data.tokens||0;
-    const cost=data.cost||0;
-    addMsg('agent',typeof out==='string'?out:JSON.stringify(out,null,2),{model,tokens:tok,cost});
-    S.tokensOut+=(data.output_tokens||tok);S.tokensIn+=(data.input_tokens||0);
-    S.cost+=cost;S.tasksCompleted++;
-    updateMetrics();
+  const route = data.route || {};
+  const tier = route.tier || 'unknown';
+  const routeModel = route.model || '';
+  const reason = route.reason || '';
+  const cost = data.cost_usd || data.cost || 0;
+  const latency = data.latency_s || 0;
+  const output = data.output || data.result || '';
+
+  // Show routing decision in terminal
+  termWrite('> Route: '+tier+' → '+routeModel,'term-cmd');
+  if(reason) termWrite('  Reason: '+reason,'term-info');
+  termWrite('  Latency: '+latency.toFixed(2)+'s | Cost: $'+cost.toFixed(4),'term-info');
+
+  // Check for error in output
+  if(typeof output === 'string' && output.startsWith('[LLM error') || output.startsWith('❌')){
+    addMsg('system', output, {model: tierToModel(tier), cost});
+    termWrite('ERROR: '+output.slice(0,200),'term-err');
+    toast('Task error — check terminal','error');
+    // Auto-diagnose
+    autoDiagnose(output, tier, routeModel);
+  } else {
+    addMsg('agent', typeof output === 'string' ? output : JSON.stringify(output, null, 2),
+      {model: tierToModel(tier), tokens: data.total_tokens||0, cost});
     toast('Task completed','success');
   }
-  termWrite('--- task complete ---','term-info');
+
+  // Update metrics
+  S.cost += cost;
+  S.tasksCompleted++;
+  S.routingBreakdown[tier] = (S.routingBreakdown[tier]||0)+1;
+  updateMetrics();
+  renderPieChart();
+  termWrite('--- task complete ('+latency.toFixed(2)+'s) ---','term-info');
+}
+
+function autoDiagnose(errorMsg, tier, model){
+  const msg = errorMsg.toLowerCase();
+  let diagnosis = '';
+  let action = '';
+
+  if(msg.includes('bearer') || msg.includes('401') || msg.includes('unauthorized')){
+    diagnosis = 'API key missing or invalid for '+model;
+    action = 'Check OPENROUTER_API_KEY in core/.env';
+  } else if(msg.includes('402') || msg.includes('credits') || msg.includes('afford')){
+    diagnosis = 'Insufficient OpenRouter credits for '+model;
+    action = 'Add credits at openrouter.ai/settings/credits or switch to a free model';
+  } else if(msg.includes('not a valid model')){
+    diagnosis = 'Model ID "'+model+'" not found on provider';
+    action = 'Check model ID at openrouter.ai/models';
+  } else if(msg.includes('timeout') || msg.includes('timed out')){
+    diagnosis = 'Request to '+model+' timed out';
+    action = 'Model may be overloaded — try again or use a different tier';
+  } else if(msg.includes('connection refused') || msg.includes('connect')){
+    diagnosis = 'Cannot reach '+model+' endpoint';
+    action = tier === 'uncensored_local' ? 'Check Ollama is running: systemctl status ollama' : 'Check internet connectivity';
+  } else if(msg.includes('ollama') || msg.includes('11434')){
+    diagnosis = 'Ollama service unreachable';
+    action = 'Start Ollama: sudo systemctl start ollama';
+  } else if(msg.includes('vast') || msg.includes('gpu')){
+    diagnosis = 'Vast.ai GPU provisioning failed';
+    action = 'Check VAST_API_KEY and account balance at vast.ai';
+  } else if(msg.includes('rate limit') || msg.includes('429')){
+    diagnosis = 'Rate limited by '+model;
+    action = 'Waiting and retrying automatically...';
+    // Auto-retry after 5 seconds
+    setTimeout(()=>{
+      addMsg('system','Auto-retrying after rate limit...');
+      sendMessage();
+    }, 5000);
+    return;
+  } else {
+    diagnosis = 'Unknown error on '+tier+' tier';
+    action = 'Check: journalctl -u ncore-gateway -n 20';
+  }
+
+  addMsg('system', '🔍 Diagnosis: '+diagnosis+'\n💡 Action: '+action);
+  termWrite('DIAG: '+diagnosis,'term-err');
+  termWrite('FIX:  '+action,'term-info');
 }
 
 // Simulated response for demo/offline mode
@@ -576,6 +630,38 @@ function connectWS(){
 
 function handleWSMessage(msg){
   switch(msg.type){
+    case 'route':
+      // Routing decision from orchestrator
+      const r = msg.data || msg;
+      termWrite('> Route: '+r.tier+' → '+(r.model||'')+(r.reason?' ('+r.reason+')':''),'term-cmd');
+      addMsg('system','Routing to '+r.tier+' tier → '+(r.model||'unknown'));
+      // Update routing breakdown
+      S.routingBreakdown[r.tier] = (S.routingBreakdown[r.tier]||0)+1;
+      renderPieChart();
+      break;
+    case 'enhance':
+      const e = msg.data || msg;
+      termWrite('> Enhance: domains='+JSON.stringify(e.domains)+' critic='+e.critic_score,'term-info');
+      break;
+    case 'result':
+      const d = msg.data || msg;
+      termWrite('> Result: tier='+d.tier+' model='+d.model+' latency='+d.latency_s+'s cost=$'+d.cost_usd,'term-info');
+      if(d.output_preview) addMsg('agent', d.output_preview+'...', {model: tierToModel(d.tier), cost: d.cost_usd});
+      if(d.cost_usd) S.cost += d.cost_usd;
+      S.tasksCompleted++;
+      updateMetrics();
+      break;
+    case 'gpu_complete':
+      const g = msg.data || msg;
+      toast(g.pod_type+' generation complete — '+g.duration_s+'s, $'+g.cost_usd.toFixed(4),'success');
+      termWrite('> GPU: '+g.gpu_profile+' completed in '+g.duration_s+'s (cost: $'+g.cost_usd.toFixed(4)+')','term-info');
+      break;
+    case 'agent_zero':
+      const az = msg.data || msg;
+      toast('Agent Zero completed — '+az.steps+' steps, '+az.duration_s+'s','success');
+      termWrite('> Agent Zero: '+az.steps+' steps, '+az.duration_s+'s','term-info');
+      break;
+    // Legacy event types (backward compat)
     case 'step':
       if(msg.tool)addMsg('tool',msg.result||'',{toolName:msg.tool,args:msg.args,model:msg.model});
       else addMsg('agent',msg.content||'',{model:msg.model,tokens:msg.tokens,cost:msg.cost});
@@ -587,14 +673,18 @@ function handleWSMessage(msg){
       applyMetrics(msg);break;
     case 'status':
       updateServiceStatus(msg);break;
-    case 'gpu_event':
-      toast(msg.message||'GPU event','info');
-      break;
-    case 'complete':
-      S.tasksCompleted++;updateMetrics();toast('Task completed','success');break;
     case 'error':
-      addMsg('system','Error: '+(msg.message||msg.error));toast(msg.message||'Error','error');break;
+      addMsg('system','Error: '+(msg.message||msg.error||JSON.stringify(msg.data||msg)));
+      toast(msg.message||msg.error||'Error','error');
+      break;
+    default:
+      termWrite('> WS: '+JSON.stringify(msg),'term-info');
   }
+}
+
+function tierToModel(tier){
+  const map = {fast:'fast',free_coder:'free',free_reasoning:'worker',worker:'worker',opus:'opus',uncensored_local:'local',uncensored:'local',image:'local',video:'local'};
+  return map[tier] || 'worker';
 }
 
 // ===== POLLING FALLBACK =====
@@ -602,25 +692,37 @@ function startPolling(){
   if(S.pollTimer)return;
   S.pollTimer=setInterval(async()=>{
     try{
-      const [h,m]=await Promise.all([
-        fetch(API_BASE+'/health').then(r=>r.json()).catch(()=>null),
+      const [ready,m]=await Promise.all([
+        fetch(API_BASE+'/ready').then(r=>r.json()).catch(()=>null),
         fetch(API_BASE+'/metrics').then(r=>r.text()).catch(()=>null)
       ]);
-      if(h)updateServiceStatus(h);
+      if(ready && ready.checks) updateServiceStatus(ready.checks);
       if(m)parsePrometheusMetrics(m);
     }catch(e){}
   },3000);
 }
 
-function updateServiceStatus(h){
-  const map={ollama:'st-ollama',redis:'st-redis',gateway:'st-gateway',openclaw:'st-openclaw'};
-  Object.entries(map).forEach(([k,id])=>{
-    const el=$(id);if(!el)return;
-    const up=h[k]===true||h[k]==='ok'||h[k]==='up'||(h.services&&h.services[k]);
-    el.className='dot '+(up?'up':'down');
+function updateServiceStatus(checks){
+  // checks is {gateway: {status:"ok"}, redis: {status:"ok"}, ollama: {status:"ok", models:[...]}, ...}
+  const map = {
+    gateway: 'st-gateway',
+    redis: 'st-redis',
+    ollama: 'st-ollama',
+    agent_zero: 'st-openclaw'  // Repurpose OpenClaw dot for Agent Zero
+  };
+  Object.entries(map).forEach(([key, elId])=>{
+    const el = $(elId);
+    if(!el) return;
+    const check = checks[key];
+    if(!check) { el.className='dot unknown'; return; }
+    el.className = 'dot ' + (check.status === 'ok' ? 'up' : check.status === 'not_deployed' ? 'unknown' : 'down');
   });
-  // If health came back at all, gateway is up
-  if(h)$('st-gateway').className='dot up';
+  // Update label for Agent Zero
+  const azLabel = $('st-openclaw');
+  if(azLabel && azLabel.parentElement){
+    const textNode = azLabel.parentElement.lastChild;
+    if(textNode && textNode.nodeType === 3) textNode.textContent = 'Agent Zero';
+  }
 }
 
 // ===== PROMETHEUS PARSER =====
@@ -747,15 +849,17 @@ $('chat-feed').addEventListener('scroll',function(){
   startPolling(); // start polling immediately, WS will cancel it on connect
   renderPieChart();
   $('scroll-lock-btn').classList.add('on');
-  addMsg('system','NCore Genesis v7.5 Mission Control ready. Gateway: '+location.origin);
-  addMsg('agent','Welcome to NCore Genesis. I can execute tasks using the 5-layer routing stack:\n\n'+
-    '1. Local (Dark Champion) — abliterated 8B, zero cost\n'+
-    '2. Free (Qwen3 Coder) — 480B MoE, free tier\n'+
-    '3. Fast (Gemini Flash Lite) — Google free tier\n'+
-    '4. Worker (DeepSeek R1) — 671B reasoning\n'+
-    '5. Opus (Claude 4.6) — maximum capability\n\n'+
+  addMsg('system','NCore Genesis v7.6 Mission Control ready. Gateway: '+location.origin);
+  addMsg('agent','Welcome to NCore Genesis v7.6. I route tasks through a 7-tier cascade:\\n\\n'+
+    '1. Local — Dark Champion V2 21B + Qwen3.5 abliterated ($0)\\n'+
+    '2. Fast — GPT-OSS 20B free ($0, matches o3-mini)\\n'+
+    '3. Free Coder — Qwen3 Coder 480B ($0)\\n'+
+    '4. Free Reasoning — DeepSeek R1 ($0)\\n'+
+    '5. Worker — DeepSeek V3.2 ($0.14/$0.28/M)\\n'+
+    '6. Opus — Claude 4.6 ($5/$25/M, budget-gated)\\n'+
+    '7. GPU — Vast.ai burst (video/image gen)\\n\\n'+
     'Select a model or let the router choose automatically.',
-    {model:'worker',tokens:89,cost:0});
+    {model:'fast',tokens:0,cost:0});
 })();
 </script>
 </body>
