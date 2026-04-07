@@ -82,6 +82,10 @@ class NCoreMasterRouter:
         r"^(what is|define|who is|when was|how many|what year)",
         r"^(translate|convert|format|summarize in \d+)",
         r"^(yes or no|true or false)",
+        r"^[\d\s+\-*/^().=]+$",           # bare math: "2+2", "3 * 5", "(10+2)/3"
+        r"^(hi|hello|hey|thanks|thank you|ok|okay|sure|yes|no|ping)$",  # greetings/acks
+        r"^\w+$",                          # single word: "hello", "test"
+        r"^(what|how|when|where|who)\s+\w+\s*\?*$",  # 2-word questions: "what time?"
     ]
     OPUS_KW = [
         "legal", "contract", "lawsuit", "compliance", "regulation",
@@ -225,6 +229,9 @@ class NCoreMasterRouter:
             return self._free_reasoning(f"Reasoning (complexity {score}/10) → DeepSeek R1 free")
         if score >= 6 and self._opus_spend_today() > 3.0:
             return self._worker(f"Complexity {score}/10 — Opus over budget", turns)
+        # v7.6.1: Low complexity (<4) routes to FAST ($0) not WORKER
+        if score < 4 and tokens < 200:
+            return self._fast(f"Low complexity {score}/10, {int(tokens)} tokens")
         return self._worker(f"Standard reasoning, complexity {score}/10", turns)
 
     # ── Tier builders ────────────────────────────────────────────────
