@@ -150,9 +150,7 @@ button{cursor:pointer}
 .rp-header{padding:8px 12px;font-size:12px;font-weight:600;color:var(--text2);
   border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
 .rp-header .dot{width:6px;height:6px}
-#terminal{flex:1;overflow-y:auto;padding:10px;background:var(--term-bg);
-  font-family:'SF Mono',SFMono-Regular,Consolas,monospace;font-size:12px;color:var(--term-text);
-  line-height:1.6;white-space:pre-wrap;word-break:break-all}
+/* #terminal styles are now inline on the element for dual-view support */
 .term-cmd{color:var(--blue)}
 .term-err{color:var(--red)}
 .term-info{color:var(--text2)}
@@ -200,6 +198,50 @@ button{cursor:pointer}
 #sidebar-toggle{position:fixed;top:8px;left:8px;z-index:100;background:var(--bg2);
   padding:4px 8px;border-radius:4px;border:1px solid var(--border);color:var(--text2);
   font-size:14px;display:none;cursor:pointer}
+
+/* === INVESTIGATION TRACE === */
+.trace-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:8px;overflow:hidden;transition:all .2s}
+.trace-card.active{border-color:var(--blue);box-shadow:0 0 12px rgba(88,166,255,.15)}
+.trace-card.success{border-color:var(--green)}
+.trace-card.error{border-color:var(--red)}
+.trace-header{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;cursor:pointer;gap:8px}
+.trace-header:hover{background:rgba(255,255,255,.02)}
+.trace-icon{width:24px;height:24px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0}
+.trace-icon.running{background:rgba(88,166,255,.15);color:var(--blue);animation:pulse 1.5s infinite}
+.trace-icon.done{background:rgba(63,185,80,.15);color:var(--green)}
+.trace-icon.fail{background:rgba(248,81,73,.15);color:var(--red)}
+.trace-tool-name{font-size:13px;font-weight:600;color:var(--text);flex:1}
+.trace-time{font-size:11px;color:var(--text3);font-family:monospace}
+.trace-status{font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px}
+.trace-status.running{background:rgba(88,166,255,.12);color:var(--blue)}
+.trace-status.success{background:rgba(63,185,80,.12);color:var(--green)}
+.trace-status.error{background:rgba(248,81,73,.12);color:var(--red)}
+.trace-body{max-height:0;overflow:hidden;transition:max-height .3s ease;background:var(--bg);border-top:1px solid transparent}
+.trace-card.expanded .trace-body{max-height:400px;overflow-y:auto;border-top-color:var(--border)}
+.trace-stdout{padding:8px 12px;font-family:'SF Mono',SFMono-Regular,Consolas,monospace;font-size:11px;color:var(--term-text);white-space:pre-wrap;line-height:1.5}
+.trace-stdout .highlight{color:var(--yellow);font-weight:600}
+.trace-stdout .found{color:var(--green)}
+.trace-stdout .notfound{color:var(--text3)}
+.trace-summary{padding:8px 12px;font-size:12px;color:var(--text2);border-top:1px solid var(--border);display:flex;gap:12px}
+.trace-summary .count{font-weight:600;color:var(--text)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+
+/* === ENHANCED MESSAGE STYLES === */
+.msg-investigation{background:linear-gradient(135deg,rgba(88,166,255,.06),rgba(188,140,255,.06));border:1px solid rgba(88,166,255,.2);align-self:flex-start;width:95%}
+.msg-investigation .inv-header{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-weight:600;color:var(--blue)}
+.msg-investigation .inv-target{font-size:14px;color:var(--text);font-weight:600}
+.msg-investigation .inv-tools{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+.msg-investigation .inv-tool-badge{padding:2px 8px;background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:4px;font-size:11px;color:var(--text2)}
+
+/* === RESULTS TABLE === */
+.result-table{width:100%;border-collapse:collapse;margin:8px 0;font-size:12px}
+.result-table th{text-align:left;padding:6px 8px;background:var(--bg);color:var(--text2);font-size:11px;text-transform:uppercase;letter-spacing:.3px;border-bottom:1px solid var(--border)}
+.result-table td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.04);color:var(--text)}
+.result-table tr:hover td{background:rgba(255,255,255,.02)}
+
+/* === PROGRESS BAR (for investigation) === */
+.inv-progress{height:3px;background:var(--border);border-radius:2px;margin:8px 0;overflow:hidden}
+.inv-progress-fill{height:100%;background:linear-gradient(90deg,var(--blue),var(--purple));border-radius:2px;transition:width .5s ease;width:0%}
 
 /* === RESPONSIVE === */
 @media(max-width:1100px){
@@ -276,16 +318,25 @@ button{cursor:pointer}
 
 <!-- RIGHT PANEL -->
 <div id="right-panel">
-  <div class="rp-section">
+  <div class="rp-section" id="trace-section">
     <div class="rp-header">
-      <span>Live Terminal</span>
+      <span id="trace-title">Live Terminal</span>
       <span style="display:flex;gap:6px;align-items:center">
+        <button class="toggle-btn" id="trace-mode-btn" onclick="toggleTraceMode()" title="Switch view">Terminal</button>
         <button class="toggle-btn" id="scroll-lock-btn" onclick="toggleScrollLock()" title="Auto-scroll">&#8595; Auto</button>
         <span class="dot up" id="term-status"></span>
       </span>
     </div>
-    <div id="terminal"><span class="term-info">$ Waiting for commands...</span>
-</div>
+    <!-- Terminal view (default) -->
+    <div id="terminal-view" style="flex:1;overflow-y:auto">
+      <div id="terminal" style="padding:10px;background:var(--term-bg);font-family:'SF Mono',SFMono-Regular,Consolas,monospace;font-size:12px;color:var(--term-text);line-height:1.6;white-space:pre-wrap;word-break:break-all;min-height:100%">
+        <span class="term-info">$ Waiting for commands...</span>
+      </div>
+    </div>
+    <!-- Investigation trace view (activates during investigations) -->
+    <div id="trace-view" style="flex:1;overflow-y:auto;padding:8px;display:none">
+      <div id="trace-cards"></div>
+    </div>
   </div>
   <div class="rp-section">
     <div class="rp-header">Metrics</div>
@@ -403,6 +454,13 @@ function addMsg(type,content,opts={}){
   meta+='</div>';
 
   let body='';
+  if(type==='investigation'){
+    // Investigation messages use raw HTML (already sanitized by caller)
+    div.innerHTML=meta+content+'<button class="copy-btn" onclick="copyMsg(this)">Copy</button>';
+    feed.appendChild(div);
+    if(!S.scrollLockChat)feed.scrollTop=feed.scrollHeight;
+    return div;
+  }
   if(type==='tool'){
     const toolName=opts.toolName||'tool';
     const args=opts.args||'';
@@ -734,12 +792,23 @@ function handleWSMessage(msg){
     case 'investigation':
       const inv = msg.data || msg;
       if(inv.status === 'executing'){
-        addMsg('system', '🔍 Investigation started: '+inv.target);
+        startInvestigation(inv.target, inv.tools);
         termWrite('> INVESTIGATION: target='+inv.target,'term-cmd');
-        (inv.tools||[]).forEach(t => termWrite('  Tool: '+t,'term-info'));
+      } else if(inv.status === 'tool_start'){
+        updateToolTrace(inv.tool, 'running', inv.message||'Starting...', 0);
+        termWrite('  ['+inv.tool+'] started','term-info');
+      } else if(inv.status === 'tool_output'){
+        updateToolTrace(inv.tool, 'running', inv.output, inv.findings||0);
+      } else if(inv.status === 'tool_done'){
+        updateToolTrace(inv.tool, 'success', inv.summary||'Complete', inv.findings||0);
+        termWrite('  ['+inv.tool+'] complete: '+(inv.findings||0)+' findings','term-info');
+      } else if(inv.status === 'tool_error'){
+        updateToolTrace(inv.tool, 'error', inv.error||'Failed', 0);
+        termWrite('  ['+inv.tool+'] FAILED: '+inv.error,'term-err');
       } else if(inv.status === 'complete'){
-        toast('Investigation complete — '+inv.steps+' steps, '+inv.duration_s+'s','success');
-        termWrite('> INVESTIGATION COMPLETE: '+inv.steps+' steps in '+inv.duration_s+'s','term-info');
+        endInvestigation(inv.summary);
+        toast('Investigation complete — '+inv.steps+' tools, '+inv.duration_s+'s','success');
+        termWrite('> INVESTIGATION COMPLETE: '+(inv.steps||'?')+' tools in '+(inv.duration_s||'?')+'s','term-info');
       }
       break;
     // Legacy event types (backward compat)
@@ -761,6 +830,134 @@ function handleWSMessage(msg){
     default:
       termWrite('> WS: '+JSON.stringify(msg),'term-info');
   }
+}
+
+// ===== INVESTIGATION TRACE =====
+const traceState = {tools: {}, mode: 'terminal', investigationActive: false};
+
+function toggleTraceMode(){
+  traceState.mode = traceState.mode === 'terminal' ? 'trace' : 'terminal';
+  $('terminal-view').style.display = traceState.mode === 'terminal' ? '' : 'none';
+  $('trace-view').style.display = traceState.mode === 'trace' ? '' : 'none';
+  $('trace-mode-btn').textContent = traceState.mode === 'terminal' ? 'Terminal' : 'Trace';
+  $('trace-title').textContent = traceState.mode === 'terminal' ? 'Live Terminal' : 'Tool Execution Trace';
+}
+
+function startInvestigation(target, tools){
+  traceState.investigationActive = true;
+  traceState.tools = {};
+  const container = $('trace-cards');
+  container.innerHTML = '';
+
+  // Auto-switch to trace mode
+  if(traceState.mode !== 'trace') toggleTraceMode();
+
+  // Create a card for each tool
+  (tools||['sherlock','maigret','h8mail','HIBP','web_search','IntelX']).forEach((tool,i) => {
+    traceState.tools[tool] = {status:'pending', output:'', startTime:null, endTime:null, findings:0};
+    const card = document.createElement('div');
+    card.className = 'trace-card';
+    card.id = 'trace-'+tool;
+    card.innerHTML = `
+      <div class="trace-header" onclick="this.parentElement.classList.toggle('expanded')">
+        <div class="trace-icon" id="icon-${tool}">&#9679;</div>
+        <span class="trace-tool-name">${esc(tool)}</span>
+        <span class="trace-time" id="time-${tool}">&mdash;</span>
+        <span class="trace-status" id="status-${tool}">pending</span>
+      </div>
+      <div class="trace-body">
+        <div class="trace-stdout" id="stdout-${tool}">Waiting to start...</div>
+      </div>`;
+    container.appendChild(card);
+  });
+
+  // Add investigation message to chat
+  const toolBadges = (tools||[]).map(t => `<span class="inv-tool-badge">${esc(t)}</span>`).join('');
+  addMsg('investigation',
+    `<div class="inv-header">&#128270; Investigation Started</div>
+     <div class="inv-target">${esc(target)}</div>
+     <div style="margin-top:4px;font-size:12px;color:var(--text2)">Executing ${(tools||[]).length} OSINT tools in parallel</div>
+     <div class="inv-tools">${toolBadges}</div>
+     <div class="inv-progress"><div class="inv-progress-fill" id="inv-progress"></div></div>`, {});
+}
+
+function updateToolTrace(tool, status, output, findings){
+  const ts = traceState.tools[tool];
+  if(!ts) return;
+
+  ts.status = status;
+  if(output) ts.output += output + '\n';
+  if(findings) ts.findings = findings;
+
+  const card = $('trace-'+tool);
+  if(!card) return;
+
+  const icon = $('icon-'+tool);
+  const statusEl = $('status-'+tool);
+  const timeEl = $('time-'+tool);
+  const stdoutEl = $('stdout-'+tool);
+
+  if(status === 'running' && !ts.startTime) {
+    ts.startTime = Date.now();
+    card.classList.add('active');
+    card.classList.add('expanded');
+    icon.className = 'trace-icon running';
+    icon.innerHTML = '&#9881;';
+    statusEl.className = 'trace-status running';
+    statusEl.textContent = 'running';
+  }
+
+  if(status === 'success') {
+    ts.endTime = Date.now();
+    card.classList.remove('active');
+    card.classList.add('success');
+    icon.className = 'trace-icon done';
+    icon.innerHTML = '&#10003;';
+    statusEl.className = 'trace-status success';
+    statusEl.textContent = findings ? findings+' found' : 'done';
+    timeEl.textContent = ((ts.endTime - ts.startTime)/1000).toFixed(1)+'s';
+  }
+
+  if(status === 'error') {
+    ts.endTime = Date.now();
+    card.classList.remove('active');
+    card.classList.add('error');
+    icon.className = 'trace-icon fail';
+    icon.innerHTML = '&#10007;';
+    statusEl.className = 'trace-status error';
+    statusEl.textContent = 'failed';
+  }
+
+  if(output) {
+    // Highlight key findings
+    let highlighted = esc(output)
+      .replace(/(found|match|hit|positive|exists?|active|registered)/gi, '<span class="found">$1</span>')
+      .replace(/(not found|no results?|negative|missing|inactive)/gi, '<span class="notfound">$1</span>')
+      .replace(/(\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b)/g, '<span class="highlight">$1</span>')
+      .replace(/(https?:\/\/\S+)/g, '<span class="highlight">$1</span>');
+    stdoutEl.innerHTML = highlighted;
+    // Auto-scroll stdout
+    stdoutEl.scrollTop = stdoutEl.scrollHeight;
+  }
+
+  // Update progress bar
+  const total = Object.keys(traceState.tools).length;
+  const done = Object.values(traceState.tools).filter(t => t.status === 'success' || t.status === 'error').length;
+  const pct = Math.round((done/total)*100);
+  const progEl = $('inv-progress');
+  if(progEl) progEl.style.width = pct+'%';
+}
+
+function endInvestigation(summary){
+  traceState.investigationActive = false;
+  // Switch all pending to skipped
+  Object.entries(traceState.tools).forEach(([tool, ts]) => {
+    if(ts.status === 'pending') {
+      updateToolTrace(tool, 'error', 'Skipped', 0);
+    }
+  });
+  const progEl = $('inv-progress');
+  if(progEl) progEl.style.width = '100%';
 }
 
 function tierToModel(tier){
