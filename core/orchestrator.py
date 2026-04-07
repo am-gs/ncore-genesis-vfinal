@@ -452,11 +452,16 @@ Be thorough. Execute every tool. Report raw data, not summaries."""
                 return {**state, "output": output, "cost_usd": cost, "latency_s": latency}
 
         except ImportError:
-            log.warning("ncore.agent_zero_not_installed")
-            # Fall through to regular LLM
+            log.warning("ncore.agent_zero_not_installed", fallback="ollama")
         except Exception as e:
-            log.error("ncore.investigation_error", error=str(e))
-            # Fall through to regular LLM
+            log.warning("ncore.agent_zero_failed", error=str(e), fallback="ollama")
+
+        # Agent Zero failed — redirect to uncensored local model
+        d["provider"] = "ollama"
+        d["model"] = os.environ.get("UNCENSORED_LOCAL", "huihui_ai/qwen3.5-abliterated:35b-a3b")
+        d["endpoint"] = "http://localhost:11434"
+        d["estimated_cost_usd"] = 0.0
+        log.info("ncore.investigation_fallback", model=d["model"])
 
     # ── OLLAMA tasks (local uncensored) (FIX 3) ──────────────────────────────
     if d["provider"] == "ollama":
