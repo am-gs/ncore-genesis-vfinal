@@ -731,6 +731,17 @@ function handleWSMessage(msg){
       toast('Agent Zero completed — '+az.steps+' steps, '+az.duration_s+'s','success');
       termWrite('> Agent Zero: '+az.steps+' steps, '+az.duration_s+'s','term-info');
       break;
+    case 'investigation':
+      const inv = msg.data || msg;
+      if(inv.status === 'executing'){
+        addMsg('system', '🔍 Investigation started: '+inv.target);
+        termWrite('> INVESTIGATION: target='+inv.target,'term-cmd');
+        (inv.tools||[]).forEach(t => termWrite('  Tool: '+t,'term-info'));
+      } else if(inv.status === 'complete'){
+        toast('Investigation complete — '+inv.steps+' steps, '+inv.duration_s+'s','success');
+        termWrite('> INVESTIGATION COMPLETE: '+inv.steps+' steps in '+inv.duration_s+'s','term-info');
+      }
+      break;
     // Legacy event types (backward compat)
     case 'step':
       if(msg.tool)addMsg('tool',msg.result||'',{toolName:msg.tool,args:msg.args,model:msg.model});

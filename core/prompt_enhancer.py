@@ -122,10 +122,26 @@ _RE_ETH = re.compile(r"\b0x[a-fA-F0-9]{40}\b")
 _RE_URL = re.compile(r"https?://[^\s\"'>]+")
 _RE_SSN = re.compile(r"\b\d{3}-\d{2}-\d{4}\b")
 
+# Named entity patterns (heuristic — covers most Western names and US addresses)
+_RE_US_ADDRESS = re.compile(
+    r'\b(\d{1,6}\s+(?:[NSEW]\.?\s+)?(?:[A-Z][a-z]+\s*){1,4}'
+    r'(?:St|Ave|Blvd|Dr|Rd|Ln|Ct|Way|Pl|Cir|Pkwy|Ter|Loop)'
+    r'(?:\s*(?:#|Apt|Suite|Unit)\s*\w+)?)'
+    r'(?:\s*,?\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\s*,?\s*([A-Z]{2})\s*(\d{5})?)?',
+    re.IGNORECASE
+)
+
+# Simple name detection: 2-3 capitalized words after common prepositions/keywords
+_RE_NAME_CONTEXT = re.compile(
+    r'(?:on|about|for|named?|person|subject|target|check)\s+'
+    r'["\']?([A-Z][a-z]+(?:\s+[A-Z]\.?)?\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)["\']?',
+    re.MULTILINE
+)
+
 
 def extract_indicators(prompt: str) -> dict[str, list[str]]:
-    """Extract IOCs and PII patterns from the prompt text."""
-    return {
+    """Extract IOCs, PII patterns, and named entities from the prompt text."""
+    indicators = {
         "emails": _RE_EMAIL.findall(prompt),
         "phones": _RE_PHONE.findall(prompt),
         "ips": _RE_IPV4.findall(prompt),
@@ -135,6 +151,21 @@ def extract_indicators(prompt: str) -> dict[str, list[str]]:
         "urls": _RE_URL.findall(prompt),
         "ssns": _RE_SSN.findall(prompt),
     }
+
+    # Entity extraction — names and addresses
+    addresses = _RE_US_ADDRESS.findall(prompt)
+    names = _RE_NAME_CONTEXT.findall(prompt)
+
+    # Also try to extract name from "on [Name]" pattern at end of prompt
+    on_name = re.findall(r'on\s+["\']?([A-Z][a-z]+\s+[A-Z][a-z]+)', prompt)
+    if on_name and not names:
+        names = on_name
+
+    indicators["addresses"] = [a[0].strip() for a in addresses if a[0].strip()] if addresses else []
+    indicators["names"] = list(set(names)) if names else []
+    indicators["city_state"] = [(a[1].strip(), a[2].strip()) for a in addresses if len(a) > 2 and a[1]] if addresses else []
+
+    return indicators
 
 
 # ── 4. Output Templates ────────────────────────────────────────────────────

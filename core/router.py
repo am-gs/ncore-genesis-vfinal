@@ -34,6 +34,7 @@ class ModelTier(Enum):
     CODER           = "coder"           # Qwen3-Coder-30B on Vast
     UNCENSORED      = "uncensored"      # Vast serverless or local abliterated
     UNCENSORED_LOCAL = "uncensored_local"  # Qwen3.5 abliterated on Ollama
+    INVESTIGATION   = "investigation"     # Agent Zero autonomous OSINT/investigation
     IMAGE_GEN       = "image"
     VIDEO_GEN       = "video"
 
@@ -53,8 +54,9 @@ class RouteDecision:
 
 class NCoreMasterRouter:
     """
-    7-tier routing cascade (v7.6 — April 7 2026):
+    8-tier routing cascade (v7.6-SOTA — April 7 2026):
       L0:   Media detection         → Vast pod (image / video)
+      L0.5: Investigation/OSINT     → Agent Zero autonomous tool execution
       L1:   Trivial heuristics      → FAST (GPT-OSS 20B free, $0)
       L1.5: Free code routing       → FREE_CODER (Qwen3 Coder 480B free, $0)
       L1.7: Uncensored detection    → UNCENSORED_LOCAL (Qwen3.5 abliterated, $0)
@@ -94,6 +96,15 @@ class NCoreMasterRouter:
         "code", "script", "function", "class", "debug", "refactor",
         "implement", "program", "algorithm", "sql", "bash", "python",
         "javascript", "typescript", "api endpoint", "unit test", "dockerfile"
+    ]
+    INVESTIGATION_KW = [
+        "background check", "investigate", "investigation", "deep dive", "osint",
+        "recon", "reconnaissance", "lookup", "public records", "breach search",
+        "find information", "who is", "dox", "trace", "track down", "skip trace",
+        "identity check", "due diligence", "kyc check", "aml check", "fraud check",
+        "leaked database", "breach data", "dark web search", "credential check",
+        "email lookup", "phone lookup", "address lookup", "social media search",
+        "digital footprint", "threat intel", "intel gathering",
     ]
     UNFILTERED_KW = [
         "no filter", "uncensored", "unrestricted", "without restrictions",
@@ -151,6 +162,17 @@ class NCoreMasterRouter:
                     return self._fast("Trivial heuristic")
         if any(kw in text for kw in self.OPUS_KW):
             return self._opus("High-stakes domain keyword")
+        # L0.5: Investigation/OSINT → Agent Zero for autonomous tool execution
+        if any(kw in text for kw in self.INVESTIGATION_KW):
+            return asdict(RouteDecision(
+                tier="investigation",
+                model="agent-zero",
+                provider="agent-zero",
+                endpoint=os.environ.get("AGENT_ZERO_URL", "http://localhost:8090"),
+                engine="agent-zero",
+                reason="Investigation/OSINT → Agent Zero autonomous execution",
+                estimated_cost_usd=0.01,
+            ))
         if any(kw in text for kw in self.UNFILTERED_KW):
             # v7.6: Route to local abliterated model first ($0), fallback to Vast
             uncensored_local = os.environ.get("UNCENSORED_LOCAL", "")

@@ -371,6 +371,89 @@ async def node_execute(state: AgentState) -> AgentState:   # C2: now truly async
             output = f"❌ {pod_type.title()} generation failed: {e}"
             return {**state, "output": output, "cost_usd": 0, "latency_s": time.time() - t0}
 
+    # ── INVESTIGATION tasks (Agent Zero autonomous tool execution) ────────────
+    if d["provider"] == "agent-zero" or d["tier"] == "investigation":
+        try:
+            from agent_zero_bridge import AgentZeroBridge
+            az = AgentZeroBridge()
+
+            if not await az.is_available():
+                # Fallback: use uncensored local model if Agent Zero is down
+                log.warning("ncore.agent_zero_unavailable", fallback="ollama")
+                d["provider"] = "ollama"
+                d["model"] = os.environ.get("UNCENSORED_LOCAL", "huihui_ai/qwen3.5-abliterated:35b-a3b")
+                d["endpoint"] = "http://localhost:11434"
+                # Fall through to Ollama handler below
+            else:
+                # Build investigation-specific prompt with extracted entities
+                enhanced_task = state["task"]
+
+                # Extract entities for structured investigation
+                from prompt_enhancer import extract_indicators
+                indicators = extract_indicators(state["task"])
+
+                entity_context = ""
+                if indicators.get("names"):
+                    entity_context += f"\nTarget name(s): {', '.join(indicators['names'])}"
+                if indicators.get("addresses"):
+                    entity_context += f"\nTarget address(es): {', '.join(indicators['addresses'])}"
+                if indicators.get("emails"):
+                    entity_context += f"\nKnown email(s): {', '.join(indicators['emails'])}"
+                if indicators.get("phones"):
+                    entity_context += f"\nKnown phone(s): {', '.join(indicators['phones'])}"
+
+                investigation_prompt = f"""{enhanced_task}
+
+{entity_context}
+
+EXECUTE THIS INVESTIGATION AUTONOMOUSLY. Use ALL available tools:
+1. Search breach databases (h8mail, HIBP API, LeakCheck) for any discovered emails
+2. Username/social media search (sherlock, maigret) for the target name
+3. Public records lookup (web search, property records, court records)
+4. Phone/address verification (NumVerify, reverse lookup)
+5. Dark web / paste search (IntelX API) if available
+6. Compile ALL findings into a structured report with:
+   - Personal information found
+   - Online accounts discovered
+   - Breach/leak exposure
+   - Public records data
+   - Risk assessment score (0-100)
+   - Recommended next investigative steps
+
+Be thorough. Execute every tool. Report raw data, not summaries."""
+
+                await broadcast_ws({"type": "investigation", "data": {
+                    "target": indicators.get("names", ["unknown"])[0] if indicators.get("names") else "unknown",
+                    "tools": ["h8mail", "sherlock", "maigret", "HIBP", "web_search", "IntelX"],
+                    "status": "executing"
+                }})
+
+                result = await az.execute_task(investigation_prompt, timeout=300)
+
+                latency = time.time() - t0
+                cost = d["estimated_cost_usd"]
+
+                if result["success"]:
+                    output = result["output"]
+                    await broadcast_ws({"type": "investigation", "data": {
+                        "status": "complete",
+                        "steps": len(result.get("steps", [])),
+                        "duration_s": result["duration_s"]
+                    }})
+                else:
+                    output = f"Investigation partially completed:\n{result.get('output', '')}\n\nError: {result.get('error', 'unknown')}"
+
+                update_cost(d["tier"], cost)
+                await broadcast_ws({"type": "result", "data": {"tier": d["tier"], "model": "agent-zero", "latency_s": round(latency, 3), "cost_usd": cost}})
+                return {**state, "output": output, "cost_usd": cost, "latency_s": latency}
+
+        except ImportError:
+            log.warning("ncore.agent_zero_not_installed")
+            # Fall through to regular LLM
+        except Exception as e:
+            log.error("ncore.investigation_error", error=str(e))
+            # Fall through to regular LLM
+
     # ── OLLAMA tasks (local uncensored) (FIX 3) ──────────────────────────────
     if d["provider"] == "ollama":
         try:
@@ -397,7 +480,7 @@ async def node_execute(state: AgentState) -> AgentState:   # C2: now truly async
         return {**state, "output": output, "cost_usd": cost, "latency_s": latency}
 
     # ── AGENT ZERO delegation (complex multi-step tasks) (FIX 5) ─────────────
-    if d["tier"] == "opus" and os.environ.get("AGENT_ZERO_URL"):
+    if d["tier"] in ("opus", "worker", "free_reasoning") and os.environ.get("AGENT_ZERO_URL"):
         try:
             from agent_zero_bridge import AgentZeroBridge
             az = AgentZeroBridge()
