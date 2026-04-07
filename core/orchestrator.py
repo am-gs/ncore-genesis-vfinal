@@ -30,7 +30,7 @@ from typing import TypedDict, Optional
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response, FileResponse
+from fastapi.responses import Response, FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from langgraph.graph import StateGraph, END
@@ -41,6 +41,10 @@ from tenacity import (
     retry_if_exception_type, before_sleep_log
 )
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+
+import litellm
+from litellm import acompletion
+from litellm.caching.caching import Cache
 
 from router import NCoreMasterRouter
 from moe_router import AthenaMoERouter, NCoreModelRegistry  # H1: wired in
@@ -69,6 +73,21 @@ async def lifespan(app: FastAPI):
         limits=httpx.Limits(max_keepalive_connections=10, max_connections=20),
         timeout=httpx.Timeout(120.0, connect=10.0),
     )
+    # LiteLLM: semantic cache + fallbacks + cost tracking
+    redis_url = f"redis+unix://{os.environ.get('NCORE_REDIS_UDS', '/var/run/redis/redis-server.sock')}"
+    try:
+        litellm.cache = Cache(
+            type="redis",
+            host="localhost",
+            port=6379,
+            ttl=3600,
+        )
+        litellm.success_callback = ["cache_hit"]
+        litellm.set_verbose = False
+        log.info("ncore.litellm_cache", status="ready")
+    except Exception as e:
+        log.warning("ncore.litellm_cache_skip", error=str(e))
+
     # H1: connect MoE router cache
     await MOE_ROUTER.connect_cache()
     log.info("ncore.startup", msg="HTTP client + MoE cache ready")
@@ -115,13 +134,32 @@ class AgentState(TypedDict):
 @retry(
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=1, min=1, max=10),
-    retry=retry_if_exception_type((httpx.TimeoutException, httpx.HTTPStatusError)),
+    retry=retry_if_exception_type(Exception),
     before_sleep=before_sleep_log(structlog.stdlib.get_logger(), 30),
 )
 async def _call_llm(client: httpx.AsyncClient, endpoint: str, headers: dict, payload: dict) -> str:
-    r = await client.post(f"{endpoint}/chat/completions", headers=headers, json=payload)
-    r.raise_for_status()
-    return r.json()["choices"][0]["message"]["content"]
+    """LLM call via LiteLLM — gets caching, fallbacks, cost tracking for free."""
+    model = payload.get("model", "")
+    messages = payload.get("messages", [])
+
+    try:
+        # Use LiteLLM for OpenRouter models — gives us caching + fallbacks
+        response = await acompletion(
+            model=model,
+            messages=messages,
+            temperature=payload.get("temperature", 0.4),
+            max_tokens=payload.get("max_tokens", 8192),
+            api_key=headers.get("Authorization", "").replace("Bearer ", ""),
+            api_base=endpoint,
+            stream=False,
+            caching=True,
+        )
+        return response.choices[0].message.content
+    except Exception:
+        # Fallback to direct httpx call if LiteLLM fails
+        r = await client.post(f"{endpoint}/chat/completions", headers=headers, json=payload)
+        r.raise_for_status()
+        return r.json()["choices"][0]["message"]["content"]
 
 # ── WebSocket support (FIX 2) ─────────────────────────────────────────────────
 ws_clients: list[WebSocket] = []
@@ -412,11 +450,16 @@ _builder = StateGraph(AgentState)
 _builder.add_node("route",    node_route)     # async
 _builder.add_node("enhance",  node_enhance)   # async — FIX 4
 _builder.add_node("discover", node_discover)  # async — search 44K+ ClawHub skills
+_builder.add_node("merge",    lambda state: state)  # sync barrier — waits for both
 _builder.add_node("execute",  node_execute)   # async
 _builder.set_entry_point("route")
-_builder.add_edge("route", "enhance")         # route → enhance
-_builder.add_edge("enhance", "discover")      # enhance → discover
-_builder.add_edge("discover", "execute")      # discover → execute
+# After routing, enhance and discover run IN PARALLEL (LangGraph superstep)
+_builder.add_edge("route", "enhance")
+_builder.add_edge("route", "discover")
+# Both converge at merge node before execution
+_builder.add_edge("enhance", "merge")
+_builder.add_edge("discover", "merge")
+_builder.add_edge("merge", "execute")
 _builder.add_edge("execute", END)
 app_graph = _builder.compile()
 
@@ -445,6 +488,60 @@ async def run(req: RunRequest):
         "cost_usd":  final["cost_usd"],
         "latency_s": final["latency_s"],
     }
+
+@app.post("/run/stream")
+async def run_stream(req: RunRequest):
+    """Streaming version of /run — tokens arrive in real-time via SSE."""
+    REQUEST_COUNTER.inc()
+
+    # Route first
+    with ROUTING_LATENCY.time():
+        decision = MASTER_ROUTER.route(req.task, req.turns)
+
+    ROUTE_TIER_COUNTER.labels(tier=decision["tier"]).inc()
+    await broadcast_ws({"type": "route", "data": decision})
+    log.info("ncore.route", tier=decision["tier"], model=decision["model"])
+
+    # Handle non-LLM tasks (pods, ollama) via regular /run
+    if decision.get("requires_pod") or decision.get("provider") == "ollama":
+        # Delegate to non-streaming path
+        init = {"task": req.task, "turns": req.turns, "route": {}, "output": "", "cost_usd": 0.0, "latency_s": 0.0}
+        final = await app_graph.ainvoke(init)
+        async def single_chunk():
+            yield f"data: {json_lib.dumps({'content': final['output'], 'done': True, 'route': final['route']})}\n\n"
+        return StreamingResponse(single_chunk(), media_type="text/event-stream")
+
+    # Streaming LLM call
+    api_key = os.environ.get("OPENROUTER_API_KEY", "")
+
+    async def generate():
+        t0 = time.time()
+        full_response = ""
+        try:
+            response = await acompletion(
+                model=decision["model"],
+                messages=[{"role": "user", "content": req.task}],
+                temperature=0.4,
+                max_tokens=8192,
+                api_key=api_key,
+                api_base=decision["endpoint"],
+                stream=True,
+            )
+            async for chunk in response:
+                if chunk.choices[0].delta.content:
+                    token = chunk.choices[0].delta.content
+                    full_response += token
+                    yield f"data: {json_lib.dumps({'content': token, 'done': False})}\n\n"
+
+            latency = time.time() - t0
+            cost = decision["estimated_cost_usd"]
+            update_cost(decision["tier"], cost)
+            yield f"data: {json_lib.dumps({'content': '', 'done': True, 'route': decision, 'cost_usd': cost, 'latency_s': round(latency, 3)})}\n\n"
+
+        except Exception as e:
+            yield f"data: {json_lib.dumps({'content': f'[Error] {e}', 'done': True, 'error': str(e)})}\n\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
 
 @app.post("/run/media")
 async def run_media(

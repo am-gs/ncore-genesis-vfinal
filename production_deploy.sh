@@ -93,6 +93,8 @@ echo "[Phase 4/7] Installing Python dependencies..."
 echo "──────────────────────────────────────────────"
 "$VENV/pip" install -q -r "$NCORE_DIR/core/requirements.txt" 2>&1 | tail -3
 echo "[OK] Python deps installed"
+"$VENV/pip" install -q litellm gptcache redisvl 2>&1 | tail -2
+echo "[OK] LiteLLM gateway + semantic cache installed"
 
 echo ""
 echo "[Phase 4.5/7] Installing core skill stack..."

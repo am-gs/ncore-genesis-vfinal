@@ -20,6 +20,9 @@ echo "[1/7] Self-Evolution & Learning..."
 openclaw skill install capability-evolver 2>/dev/null && echo "  ✅ capability-evolver (35K+ installs — self-evolution engine)" || echo "  ⚠️ capability-evolver skipped"
 openclaw skill install self-improving-agent 2>/dev/null && echo "  ✅ self-improving-agent (15K+ installs — logs errors/corrections, promotes to skills)" || echo "  ⚠️ self-improving-agent skipped"
 openclaw skill install agent-memory 2>/dev/null && echo "  ✅ agent-memory (persistent file-based memory)" || echo "  ⚠️ agent-memory skipped"
+openclaw skill install openclaw-memory-enhancer 2>/dev/null && echo "  ✅ openclaw-memory-enhancer (RAG-style persistent memory)" || echo "  ⚠️ openclaw-memory-enhancer skipped"
+openclaw skill install task-decomposer 2>/dev/null && echo "  ✅ task-decomposer (complex request decomposition)" || echo "  ⚠️ task-decomposer skipped"
+openclaw skill install agent-self-reflection 2>/dev/null && echo "  ✅ agent-self-reflection (periodic session self-assessment)" || echo "  ⚠️ agent-self-reflection skipped"
 
 # ── OSINT & RECONNAISSANCE ────────────────────────────────────────────────
 echo ""

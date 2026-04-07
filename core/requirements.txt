@@ -26,6 +26,11 @@ prometheus-client>=0.20
 # Cache + session store
 redis>=5.0
 
+# LLM Gateway — semantic cache, fallbacks, adaptive routing, streaming (battle-tested)
+litellm>=1.40
+gptcache
+redisvl>=0.4.1
+
 # ML / MoE router (moe_router.py)
 numpy>=1.26
 faiss-cpu>=1.8
