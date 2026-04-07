@@ -148,6 +148,233 @@ class ComfyUIBridge:
             }
         }
 
+    # -- I2V workflow (Wan 2.2) -----------------------------------------------
+
+    def _wan22_i2v_workflow(self, prompt: str, image_path: str,
+                            negative: str = "", width: int = 832, height: int = 480,
+                            frames: int = 81, steps: int = 30,
+                            cfg: float = 6.0, seed: int = -1) -> dict:
+        """Build Wan 2.2 image-to-video workflow.
+        Uses Wan2.2-TI2V-5B hybrid model (supports both t2v and i2v).
+        Reference: https://docs.comfy.org/tutorials/video/wan/wan2_2
+        """
+        if seed == -1:
+            seed = random.randint(0, 2**32 - 1)
+        neg = negative or "blurry, low quality, distorted, watermark, text, worst quality"
+
+        return {
+            "prompt": {
+                "1": {
+                    "class_type": "WanVideoModelLoader",
+                    "inputs": {"model_name": "wan2.2_ti2v_5b.safetensors"}
+                },
+                "2": {
+                    "class_type": "LoadImage",
+                    "inputs": {"image": os.path.basename(image_path)}
+                },
+                "3": {
+                    "class_type": "WanVideoTextEncode",
+                    "inputs": {
+                        "model": ["1", 0],
+                        "positive_prompt": prompt,
+                        "negative_prompt": neg
+                    }
+                },
+                "4": {
+                    "class_type": "Wan22ImageToVideoLatent",
+                    "inputs": {
+                        "image": ["2", 0],
+                        "width": width,
+                        "height": height,
+                        "length": frames
+                    }
+                },
+                "5": {
+                    "class_type": "WanVideoSampler",
+                    "inputs": {
+                        "model": ["1", 0],
+                        "conditioning": ["3", 0],
+                        "latent": ["4", 0],
+                        "steps": steps,
+                        "cfg": cfg,
+                        "seed": seed
+                    }
+                },
+                "6": {
+                    "class_type": "WanVideoDecode",
+                    "inputs": {"samples": ["5", 0], "model": ["1", 0]}
+                },
+                "7": {
+                    "class_type": "SaveAnimatedWEBP",
+                    "inputs": {
+                        "images": ["6", 0],
+                        "filename_prefix": f"ncore_i2v_{seed}",
+                        "fps": 16, "quality": 90
+                    }
+                }
+            }
+        }
+
+    # -- Face-swap workflow (ReActor) ------------------------------------------
+
+    def _faceswap_workflow(self, source_face_path: str, target_video_or_image: str,
+                            is_video: bool = True) -> dict:
+        """Build ReActor face-swap workflow.
+        Uses pre-existing ComfyUI-ReActor plugin (inswapper_128.onnx).
+        Reference: https://github.com/Gourieff/ComfyUI-ReActor
+        """
+        if is_video:
+            return {
+                "prompt": {
+                    "1": {
+                        "class_type": "VHS_LoadVideo",
+                        "inputs": {
+                            "video": os.path.basename(target_video_or_image),
+                            "force_rate": 16, "frame_load_cap": 0
+                        }
+                    },
+                    "2": {
+                        "class_type": "LoadImage",
+                        "inputs": {"image": os.path.basename(source_face_path)}
+                    },
+                    "3": {
+                        "class_type": "ReActorFaceSwap",
+                        "inputs": {
+                            "input_image": ["1", 0],
+                            "source_image": ["2", 0],
+                            "swap_model": "inswapper_128.onnx",
+                            "facedetection": "retinaface_resnet50",
+                            "face_restore_model": "GPEN-BFR-512.onnx",
+                            "face_boost": True,
+                            "face_restore_visibility": 1.0,
+                            "codeformer_weight": 0.5
+                        }
+                    },
+                    "4": {
+                        "class_type": "VHS_VideoCombine",
+                        "inputs": {
+                            "images": ["3", 0],
+                            "audio": ["1", 2],
+                            "frame_rate": 16,
+                            "filename_prefix": "ncore_faceswap"
+                        }
+                    }
+                }
+            }
+        else:
+            # Image-only face swap
+            return {
+                "prompt": {
+                    "1": {"class_type": "LoadImage", "inputs": {"image": os.path.basename(target_video_or_image)}},
+                    "2": {"class_type": "LoadImage", "inputs": {"image": os.path.basename(source_face_path)}},
+                    "3": {
+                        "class_type": "ReActorFaceSwap",
+                        "inputs": {
+                            "input_image": ["1", 0], "source_image": ["2", 0],
+                            "swap_model": "inswapper_128.onnx",
+                            "facedetection": "retinaface_resnet50",
+                            "face_restore_model": "GPEN-BFR-512.onnx",
+                            "face_boost": True
+                        }
+                    },
+                    "4": {"class_type": "SaveImage", "inputs": {"images": ["3", 0], "filename_prefix": "ncore_faceswap"}}
+                }
+            }
+
+    # -- Image upload to ComfyUI -----------------------------------------------
+
+    async def _upload_image(self, api_url: str, image_path: str) -> str:
+        """Upload an image to a ComfyUI instance's input directory."""
+        filename = os.path.basename(image_path)
+        with open(image_path, "rb") as f:
+            files = {"image": (filename, f, "image/png")}
+            r = await self.client.post(f"{api_url}/upload/image", files=files, timeout=30)
+            r.raise_for_status()
+            data = r.json()
+            log.info("comfyui.upload_image", filename=filename, result=data)
+            return data.get("name", filename)
+
+    # -- Face-swap video pipeline ----------------------------------------------
+
+    async def generate_faceswap_video(self, prompt: str, face_images: list[str],
+                                       width: int = 832, height: int = 480,
+                                       frames: int = 81, steps: int = 30,
+                                       hd: bool = False, task_id: str = "") -> dict:
+        """Multi-stage pipeline: generate video -> face-swap each reference face.
+
+        Stage 1: Generate base video from prompt (t2v or i2v)
+        Stage 2: Apply face-swap for each reference image using ReActor
+
+        Args:
+            prompt: Video description
+            face_images: List of file paths to reference face images
+            width/height: Resolution
+            frames: Number of frames
+            steps: Sampling steps
+            hd: Use A100 for higher quality
+            task_id: Tracking ID
+        """
+        profile = "video-gen-hd" if hd else "video-gen"
+        t0 = time.time()
+
+        log.info("comfyui.faceswap_video.start", prompt=prompt[:80],
+                 faces=len(face_images), profile=profile, task_id=task_id)
+
+        # Provision GPU
+        instance = await self.gpu.smart_provision(
+            "video_hd" if hd else "video",
+            task_id or f"fsvid_{int(time.time())}")
+        instance_id = instance["instance_id"]
+
+        try:
+            api_url = await self._wait_comfyui_ready(instance["ip"], instance.get("port", 8188))
+
+            # Upload all face reference images
+            for img_path in face_images:
+                await self._upload_image(api_url, img_path)
+
+            # Stage 1: Generate base video
+            workflow = self._wan22_video_workflow(prompt, "", width, height, frames, steps)
+            prompt_id = await self._queue_prompt(api_url, workflow)
+            base_output = await self._poll_completion(api_url, prompt_id, timeout=600)
+            base_video_path = await self._download_output(
+                api_url, base_output, f"/tmp/ncore_fsvid_{task_id or int(time.time())}")
+
+            # Stage 2: Face-swap for each reference face
+            # Upload the generated video back for face-swap
+            await self._upload_image(api_url, base_video_path)
+
+            final_path = base_video_path
+            for i, face_path in enumerate(face_images):
+                fs_workflow = self._faceswap_workflow(
+                    source_face_path=face_path,
+                    target_video_or_image=final_path,
+                    is_video=True
+                )
+                fs_prompt_id = await self._queue_prompt(api_url, fs_workflow)
+                fs_output = await self._poll_completion(api_url, fs_prompt_id, timeout=300)
+                final_path = await self._download_output(
+                    api_url, fs_output,
+                    f"/tmp/ncore_fsvid_{task_id or int(time.time())}_fs{i}")
+
+            duration = time.time() - t0
+            cost = instance.get("cost_per_hour", 0.5) * (duration / 3600)
+
+            log.info("comfyui.faceswap_video.complete", duration_s=round(duration, 1),
+                     cost_usd=round(cost, 4), output=final_path)
+
+            return {
+                "output_path": final_path,
+                "duration_s": round(duration, 1),
+                "cost_usd": round(cost, 4),
+                "gpu_profile": profile,
+                "stages": ["t2v_generation", "face_swap"],
+                "faces_applied": len(face_images),
+                "instance_id": instance_id
+            }
+        finally:
+            await self.gpu.destroy(instance_id)
+
     # -- Core lifecycle -------------------------------------------------------
 
     async def generate_video(self, prompt: str, negative: str = "",

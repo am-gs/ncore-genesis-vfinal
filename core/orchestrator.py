@@ -23,12 +23,12 @@ Prior fixes retained (v3.1):
   H1 — AthenaMoERouter wired for Vast self-hosted tier model selection
 """
 from __future__ import annotations
-import asyncio, os, time, pathlib
+import asyncio, os, re, time, pathlib, uuid, shutil, base64
 import json as json_lib
 from contextlib import asynccontextmanager
-from typing import TypedDict
+from typing import TypedDict, Optional
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -88,6 +88,9 @@ app.add_middleware(
 )
 
 DASHBOARD_DIR = pathlib.Path(__file__).resolve().parent.parent / "dashboard"
+
+UPLOAD_DIR = pathlib.Path("/tmp/ncore_uploads")
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 MASTER_ROUTER = NCoreMasterRouter()
 MOE_ROUTER    = AthenaMoERouter(NCoreModelRegistry())  # H1: must pass registry
@@ -198,24 +201,89 @@ async def node_execute(state: AgentState) -> AgentState:   # C2: now truly async
             return {**state, "output": output, "cost_usd": 0, "latency_s": time.time() - t0}
 
         try:
-            if pod_type == "video":
-                # Extract video params from pod_spec
-                hd = spec.get("hd", False) or spec.get("model", "").endswith("14b")
+            # Extract image paths if attached
+            image_paths = []
+            img_match = re.search(r'\[ATTACHED_IMAGES: ([^\]]+)\]', state["task"])
+            if img_match:
+                image_paths = [p.strip() for p in img_match.group(1).split(",")]
+                # Clean task text (remove the metadata tag)
+                clean_task = re.sub(r'\n\n\[ATTACHED_IMAGES:[^\]]+\]', '', state["task"])
+            else:
+                clean_task = state["task"]
+
+            # Decompose the task
+            from task_decomposer import TaskDecomposer
+            decomposer = TaskDecomposer()
+            plan = await decomposer.analyze(clean_task, image_paths)
+            await decomposer.close()
+
+            await broadcast_ws({"type": "plan", "data": plan})
+
+            # Check if blocked (missing images, etc.)
+            if plan.get("blocked"):
+                output = f"⚠️ {plan['block_reason']}\n\n"
+                output += f"Task type detected: {plan['task_type']}\n"
+                output += f"Expected faces: {plan['expected_faces']}\n"
+                output += f"Images provided: {plan['faces_provided']}\n"
+                if plan.get("image_issues"):
+                    output += "\nImage issues:\n" + "\n".join(f"  - {issue}" for issue in plan["image_issues"])
+                output += f"\n\nPlease re-submit via POST /run/media with the required images attached."
+                return {**state, "output": output, "cost_usd": 0, "latency_s": time.time() - t0}
+
+            # Report image issues as warnings (non-blocking)
+            warnings = ""
+            if plan.get("image_issues"):
+                warnings = "\n⚠️ Image warnings:\n" + "\n".join(f"  - {issue}" for issue in plan["image_issues"])
+
+            # Execute based on task type
+            if plan["task_type"] == "face_swap_video":
+                result = await COMFYUI.generate_faceswap_video(
+                    prompt=clean_task,
+                    face_images=image_paths,
+                    width=spec.get("width", 832),
+                    height=spec.get("height", 480),
+                    frames=plan["frames"],
+                    steps=spec.get("steps", 30),
+                    hd=plan["needs_hd"],
+                    task_id=f"fsvid_{int(time.time())}",
+                )
+                output = f"✅ Face-swap video generated in {result['duration_s']:.0f}s\n"
+                output += f"Stages: {' → '.join(result['stages'])}\n"
+                output += f"Faces applied: {result['faces_applied']}\n"
+                output += f"GPU: {result['gpu_profile']} | Cost: ${result['cost_usd']:.4f}\n"
+                output += f"📁 {result['output_path']}"
+                output += warnings
+                cost = result["cost_usd"]
+            elif plan["task_type"] == "image_to_video" and image_paths:
                 result = await COMFYUI.generate_video(
-                    prompt=state["task"],
+                    prompt=clean_task,
+                    width=spec.get("width", 832),
+                    height=spec.get("height", 480),
+                    frames=plan["frames"],
+                    steps=spec.get("steps", 30),
+                    hd=plan["needs_hd"],
+                    task_id=f"i2v_{int(time.time())}",
+                )
+                output = f"✅ I2V video generated in {result['duration_s']:.0f}s | Cost: ${result['cost_usd']:.4f}\n📁 {result['output_path']}"
+                output += warnings
+                cost = result["cost_usd"]
+            elif pod_type == "video":
+                result = await COMFYUI.generate_video(
+                    prompt=clean_task,
                     negative=spec.get("negative", ""),
                     width=spec.get("width", 832),
                     height=spec.get("height", 480),
-                    frames=spec.get("frames", 81),
+                    frames=plan.get("frames", spec.get("frames", 81)),
                     steps=spec.get("steps", 30),
-                    hd=hd,
+                    hd=plan.get("needs_hd", False),
                     task_id=f"video_{int(time.time())}",
                 )
                 output = f"✅ Video generated in {result['duration_s']:.0f}s | GPU: {result['gpu_profile']} | Cost: ${result['cost_usd']:.4f}\n📁 {result['output_path']}"
+                output += warnings
                 cost = result["cost_usd"]
             else:
                 result = await COMFYUI.generate_image(
-                    prompt=state["task"],
+                    prompt=clean_task,
                     negative=spec.get("negative", ""),
                     width=spec.get("width", 1024),
                     height=spec.get("height", 1024),
@@ -223,11 +291,12 @@ async def node_execute(state: AgentState) -> AgentState:   # C2: now truly async
                     task_id=f"img_{int(time.time())}",
                 )
                 output = f"✅ Image generated in {result['duration_s']:.0f}s | GPU: {result['gpu_profile']} | Cost: ${result['cost_usd']:.4f}\n📁 {result['output_path']}"
+                output += warnings
                 cost = result["cost_usd"]
 
             latency = time.time() - t0
             update_cost(d["tier"], cost)
-            await broadcast_ws({"type": "gpu_complete", "data": {"pod_type": pod_type, "duration_s": result["duration_s"], "cost_usd": cost, "gpu_profile": result["gpu_profile"]}})
+            await broadcast_ws({"type": "gpu_complete", "data": {"pod_type": pod_type, "task_type": plan["task_type"], "duration_s": result["duration_s"], "cost_usd": cost, "gpu_profile": result["gpu_profile"]}})
             return {**state, "output": output, "cost_usd": cost, "latency_s": latency}
 
         except Exception as e:
@@ -344,6 +413,49 @@ async def run(req: RunRequest):
         "route":     final["route"],
         "cost_usd":  final["cost_usd"],
         "latency_s": final["latency_s"],
+    }
+
+@app.post("/run/media")
+async def run_media(
+    task: str = Form(...),
+    turns: int = Form(0),
+    images: list[UploadFile] = File(default=[]),
+):
+    """Run a task with optional image attachments."""
+    # Save uploaded images
+    image_paths = []
+    for img in images:
+        ext = img.filename.split(".")[-1] if img.filename else "jpg"
+        path = UPLOAD_DIR / f"{uuid.uuid4().hex}.{ext}"
+        with open(path, "wb") as f:
+            shutil.copyfileobj(img.file, f)
+        image_paths.append(str(path))
+        log.info("ncore.upload", filename=img.filename, path=str(path), size=path.stat().st_size)
+
+    # Build enhanced state with image references
+    init: AgentState = {
+        "task": task,
+        "turns": turns,
+        "route": {},
+        "output": "",
+        "cost_usd": 0.0,
+        "latency_s": 0.0,
+    }
+
+    # Inject image paths into task context for downstream nodes
+    if image_paths:
+        init["task"] = task + f"\n\n[ATTACHED_IMAGES: {','.join(image_paths)}]"
+
+    with REQUEST_LATENCY.time():
+        REQUEST_COUNTER.inc()
+        final = await app_graph.ainvoke(init)
+
+    return {
+        "output": final["output"],
+        "route": final["route"],
+        "cost_usd": final["cost_usd"],
+        "latency_s": final["latency_s"],
+        "images_received": len(image_paths),
     }
 
 @app.get("/health")
