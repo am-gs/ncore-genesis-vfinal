@@ -531,18 +531,13 @@ Be thorough. Execute every tool. Report raw data, not summaries."""
 # ── Graph (async nodes → use ainvoke) ─────────────────────────────────────────
 _builder = StateGraph(AgentState)
 _builder.add_node("route",    node_route)     # async
-_builder.add_node("enhance",  node_enhance)   # async — FIX 4
+_builder.add_node("enhance",  node_enhance)   # async — prompt enhancement
 _builder.add_node("discover", node_discover)  # async — search 44K+ ClawHub skills
-_builder.add_node("merge",    lambda state: state)  # sync barrier — waits for both
 _builder.add_node("execute",  node_execute)   # async
 _builder.set_entry_point("route")
-# After routing, enhance and discover run IN PARALLEL (LangGraph superstep)
 _builder.add_edge("route", "enhance")
-_builder.add_edge("route", "discover")
-# Both converge at merge node before execution
-_builder.add_edge("enhance", "merge")
-_builder.add_edge("discover", "merge")
-_builder.add_edge("merge", "execute")
+_builder.add_edge("enhance", "discover")
+_builder.add_edge("discover", "execute")
 _builder.add_edge("execute", END)
 app_graph = _builder.compile()
 
