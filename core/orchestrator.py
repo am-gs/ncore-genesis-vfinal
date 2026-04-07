@@ -202,6 +202,84 @@ async def run(req: RunRequest):
 async def health():
     return {"status": "ok", "version": "3.2"}
 
+@app.get("/ready")
+async def readiness_check():
+    """Deep health check — verifies every system component."""
+    checks = {}
+    client = app.state.http
+
+    # 1. Gateway itself
+    checks["gateway"] = {"status": "ok", "version": "3.2"}
+
+    # 2. Redis
+    try:
+        import redis as redis_lib
+        uds = os.environ.get("NCORE_REDIS_UDS", "/var/run/redis/redis-server.sock")
+        r = redis_lib.Redis(unix_socket_path=uds)
+        r.ping()
+        checks["redis"] = {"status": "ok"}
+    except Exception as e:
+        checks["redis"] = {"status": "error", "error": str(e)}
+
+    # 3. Ollama
+    try:
+        resp = await client.get("http://localhost:11434/api/tags", timeout=5)
+        models = [m["name"] for m in resp.json().get("models", [])]
+        checks["ollama"] = {"status": "ok", "models": models}
+    except Exception as e:
+        checks["ollama"] = {"status": "error", "error": str(e)}
+
+    # 4. OpenRouter
+    try:
+        api_key = os.environ.get("OPENROUTER_API_KEY", "")
+        resp = await client.get(
+            "https://openrouter.ai/api/v1/models",
+            headers={"Authorization": f"Bearer {api_key}"},
+            timeout=10,
+        )
+        checks["openrouter"] = {"status": "ok" if resp.status_code == 200 else "error"}
+    except Exception as e:
+        checks["openrouter"] = {"status": "error", "error": str(e)}
+
+    # 5. Agent Zero (if running)
+    try:
+        resp = await client.get("http://localhost:8090/", timeout=3)
+        checks["agent_zero"] = {"status": "ok" if resp.status_code == 200 else "down"}
+    except Exception:
+        checks["agent_zero"] = {"status": "not_deployed"}
+
+    # 6. Vast.ai API
+    vast_key = os.environ.get("VAST_API_KEY", "")
+    if vast_key:
+        try:
+            resp = await client.get(
+                "https://console.vast.ai/api/v0/users/current",
+                headers={"Authorization": f"Bearer {vast_key}"},
+                timeout=5,
+            )
+            checks["vastai"] = {"status": "ok" if resp.status_code == 200 else "error"}
+        except Exception as e:
+            checks["vastai"] = {"status": "error", "error": str(e)}
+    else:
+        checks["vastai"] = {"status": "no_key"}
+
+    # 7. Prompt Enhancer
+    try:
+        resp = await client.get("http://localhost:8081/", timeout=3)
+        checks["prompt_enhancer"] = {"status": "ok"}
+    except Exception:
+        checks["prompt_enhancer"] = {"status": "not_running"}
+
+    # Overall
+    all_ok = all(c.get("status") == "ok" for c in checks.values()
+                 if c.get("status") not in ("not_deployed", "not_running", "no_key"))
+
+    return {
+        "ready": all_ok,
+        "checks": checks,
+        "timestamp": time.time(),
+    }
+
 @app.get("/metrics")
 async def metrics():
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
