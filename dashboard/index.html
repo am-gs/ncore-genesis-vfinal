@@ -321,7 +321,7 @@ button{cursor:pointer}
   <div class="bb-sep"></div>
   <div class="bb-item"><span class="dot up" id="bb-gpu-dot"></span><span id="bb-gpus">0</span> GPUs <span id="bb-gpu-cost" style="color:var(--text3)"></span></div>
   <div class="bb-sep"></div>
-  <div class="bb-item">Model: <span id="bb-model" style="color:var(--blue)">Worker</span></div>
+  <div class="bb-item">Model: <span id="bb-model" style="color:var(--blue)">Fast (GPT-OSS 20B)</span></div>
   <div class="bb-sep"></div>
   <div class="bb-item">Uptime: <span id="bb-uptime">00:00:00</span></div>
   <div style="flex:1"></div>
@@ -850,14 +850,14 @@ $('chat-feed').addEventListener('scroll',function(){
   renderPieChart();
   $('scroll-lock-btn').classList.add('on');
   addMsg('system','NCore Genesis v7.6 Mission Control ready. Gateway: '+location.origin);
-  addMsg('agent','Welcome to NCore Genesis v7.6. I route tasks through a 7-tier cascade:\\n\\n'+
-    '1. Local — Dark Champion V2 21B + Qwen3.5 abliterated ($0)\\n'+
-    '2. Fast — GPT-OSS 20B free ($0, matches o3-mini)\\n'+
-    '3. Free Coder — Qwen3 Coder 480B ($0)\\n'+
-    '4. Free Reasoning — DeepSeek R1 ($0)\\n'+
-    '5. Worker — DeepSeek V3.2 ($0.14/$0.28/M)\\n'+
-    '6. Opus — Claude 4.6 ($5/$25/M, budget-gated)\\n'+
-    '7. GPU — Vast.ai burst (video/image gen)\\n\\n'+
+  addMsg('agent','Welcome to NCore Genesis v7.6. I route tasks through a 7-tier cascade:\n\n'+
+    '1. Local \u2014 Dark Champion V2 21B + Qwen3.5 abliterated ($0)\n'+
+    '2. Fast \u2014 GPT-OSS 20B free ($0, matches o3-mini)\n'+
+    '3. Free Coder \u2014 Qwen3 Coder 480B ($0)\n'+
+    '4. Free Reasoning \u2014 DeepSeek R1 ($0)\n'+
+    '5. Worker \u2014 DeepSeek V3.2 ($0.14/$0.28/M)\n'+
+    '6. Opus \u2014 Claude 4.6 ($5/$25/M, budget-gated)\n'+
+    '7. GPU \u2014 Vast.ai burst (video/image gen)\n\n'+
     'Select a model or let the router choose automatically.',
     {model:'fast',tokens:0,cost:0});
 })();
