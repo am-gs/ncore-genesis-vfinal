@@ -26,7 +26,7 @@ from __future__ import annotations
 import asyncio, os, re, time, pathlib, uuid, shutil, base64
 import json as json_lib
 from contextlib import asynccontextmanager
-from typing import TypedDict, Optional
+from typing import TypedDict, Optional, Annotated
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
@@ -122,13 +122,17 @@ except Exception as e:
     COMFYUI = None
 
 # ── State ─────────────────────────────────────────────────────────────────────
+def _last_value(left, right):
+    """Reducer: last writer wins. Allows parallel nodes to write the same key safely."""
+    return right if right is not None else left
+
 class AgentState(TypedDict):
-    task:      str
-    turns:     int
-    route:     dict
-    output:    str
-    cost_usd:  float
-    latency_s: float
+    task:      Annotated[str, _last_value]
+    turns:     Annotated[int, _last_value]
+    route:     Annotated[dict, _last_value]
+    output:    Annotated[str, _last_value]
+    cost_usd:  Annotated[float, _last_value]
+    latency_s: Annotated[float, _last_value]
 
 # ── tenacity-wrapped LLM call (C1 + M1) ──────────────────────────────────────
 @retry(
@@ -535,8 +539,11 @@ _builder.add_node("enhance",  node_enhance)   # async — prompt enhancement
 _builder.add_node("discover", node_discover)  # async — search 44K+ ClawHub skills
 _builder.add_node("execute",  node_execute)   # async
 _builder.set_entry_point("route")
+# Parallel fan-out: enhance + discover run simultaneously (LangGraph superstep)
+# Safe: AgentState uses Annotated[str, _last_value] reducers on all keys
 _builder.add_edge("route", "enhance")
-_builder.add_edge("enhance", "discover")
+_builder.add_edge("route", "discover")
+_builder.add_edge("enhance", "execute")
 _builder.add_edge("discover", "execute")
 _builder.add_edge("execute", END)
 app_graph = _builder.compile()
