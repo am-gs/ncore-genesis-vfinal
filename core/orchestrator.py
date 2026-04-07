@@ -5,7 +5,7 @@ Fixes (v3.3 — April 7 2026):
   - CORS middleware for external clients
   - WebSocket /ws endpoint for real-time dashboard updates
   - Ollama provider support in node_execute
-  - Prompt enhancer wired into LangGraph pipeline (route → enhance → execute)
+  - Prompt enhancer wired into LangGraph pipeline (route → enhance → discover → execute)
   - Agent Zero delegation for complex opus-tier tasks
 
 Prior fixes retained (v3.2):
@@ -185,6 +185,35 @@ async def node_enhance(state: AgentState) -> AgentState:
         log.warning("ncore.enhance_skip", error=str(e))
 
     return state  # Fall through if enhancer is down
+
+
+async def node_discover(state: AgentState) -> AgentState:
+    """Search for existing tools/skills before executing.
+    Checks ClawHub (44K+ skills), PyPI, and GitHub.
+    Skips for trivial/fast tasks to avoid latency.
+    """
+    d = state["route"]
+    # Skip discovery for trivial tasks and cached/known patterns
+    if d["tier"] in ("fast",):
+        return state
+
+    try:
+        from skill_discovery import discover_and_equip
+        installed = await discover_and_equip(state["task"])
+        if installed:
+            tools_msg = ", ".join(t.get("name", "unknown") for t in installed)
+            log.info("ncore.discover", installed=tools_msg, count=len(installed))
+            await broadcast_ws({
+                "type": "discover",
+                "data": {
+                    "tools_found": len(installed),
+                    "tools": [t.get("name") for t in installed]
+                }
+            })
+    except Exception as e:
+        log.warning("ncore.discover_skip", error=str(e))
+
+    return state
 
 
 async def node_execute(state: AgentState) -> AgentState:   # C2: now truly async
@@ -380,12 +409,14 @@ async def node_execute(state: AgentState) -> AgentState:   # C2: now truly async
 
 # ── Graph (async nodes → use ainvoke) ─────────────────────────────────────────
 _builder = StateGraph(AgentState)
-_builder.add_node("route",   node_route)    # async
-_builder.add_node("enhance", node_enhance)  # async — FIX 4
-_builder.add_node("execute", node_execute)  # async
+_builder.add_node("route",    node_route)     # async
+_builder.add_node("enhance",  node_enhance)   # async — FIX 4
+_builder.add_node("discover", node_discover)  # async — search 44K+ ClawHub skills
+_builder.add_node("execute",  node_execute)   # async
 _builder.set_entry_point("route")
-_builder.add_edge("route", "enhance")       # route → enhance
-_builder.add_edge("enhance", "execute")     # enhance → execute
+_builder.add_edge("route", "enhance")         # route → enhance
+_builder.add_edge("enhance", "discover")      # enhance → discover
+_builder.add_edge("discover", "execute")      # discover → execute
 _builder.add_edge("execute", END)
 app_graph = _builder.compile()
 

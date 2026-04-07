@@ -643,6 +643,24 @@ function handleWSMessage(msg){
       const e = msg.data || msg;
       termWrite('> Enhance: domains='+JSON.stringify(e.domains)+' critic='+e.critic_score,'term-info');
       break;
+    case 'discover':
+      const disc = msg.data || msg;
+      if(disc.tools_found > 0){
+        termWrite('> Skills found: '+disc.tools.join(', '),'term-info');
+        toast(disc.tools_found+' existing tool(s) equipped','info');
+      }
+      break;
+    case 'plan':
+      const plan = msg.data || msg;
+      termWrite('> Task: '+plan.task_type+' | GPU: '+plan.gpu_profile+' | Est. cost: $'+plan.estimated_cost,'term-info');
+      if(plan.sub_tasks){
+        plan.sub_tasks.forEach(st => termWrite('  ['+st.id+'] '+st.name+': '+st.description,'term-info'));
+      }
+      if(plan.blocked){
+        addMsg('system','\u26a0\ufe0f '+plan.block_reason);
+        toast(plan.block_reason,'error');
+      }
+      break;
     case 'result':
       const d = msg.data || msg;
       termWrite('> Result: tier='+d.tier+' model='+d.model+' latency='+d.latency_s+'s cost=$'+d.cost_usd,'term-info');
