@@ -14,7 +14,12 @@ class AgentZeroBridge:
 
     def __init__(self, base_url: str = None):
         self.base_url = base_url or AGENT_ZERO_URL
-        self.client = httpx.AsyncClient(timeout=300, base_url=self.base_url)
+        self.api_key = os.environ.get("AGENT_ZERO_API_KEY", "")
+        self.client = httpx.AsyncClient(
+            timeout=300,
+            base_url=self.base_url,
+            headers={"X-API-KEY": self.api_key, "Content-Type": "application/json"}
+        )
         self._available = None  # Cache availability check
 
     async def is_available(self) -> bool:
@@ -56,13 +61,12 @@ class AgentZeroBridge:
         try:
             # Agent Zero API: POST /message with task text
             payload = {
-                "text": task,
-                "context": context,
+                "message": task,
+                "context_id": context or "default",
             }
-            if system_prompt:
-                payload["system"] = system_prompt
 
-            r = await self.client.post("/api_message", json=payload, timeout=timeout)
+            r = await self.client.post("/api_message", json=payload, timeout=timeout,
+                                        headers={"X-API-KEY": self.api_key, "Content-Type": "application/json"})
             r.raise_for_status()
             data = r.json()
 
