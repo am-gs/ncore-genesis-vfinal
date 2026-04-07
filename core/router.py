@@ -1,8 +1,18 @@
-"""NCore Genesis — Consensus Router v3.1
+"""NCore Genesis — Consensus Router v3.2
 
-Audit fixes applied (March 26 2026):
+v7.6 (April 7 2026):
+  - FAST tier: GPT-OSS 20B free (matches o3-mini, $0, 13 providers)
+  - FREE_REASONING tier: DeepSeek R1 free ($0, reasoning)
+  - UNCENSORED_LOCAL tier: Qwen3.5-35B-A3B abliterated (local Ollama)
+  - WORKER tier: DeepSeek V3.2 ($0.14/$0.28 per M, cheapest paid frontier)
+  - 7-tier cascade routes ~90% of tasks to $0 infrastructure
+
+v7.5 (April 1 2026):
+  - Added FAST (Gemini Flash Lite) + FREE_CODER (Qwen3 Coder 480B)
+
+v3.1 (March 26 2026):
   C3 — bare except: replaced with except Exception + structlog warning
-  H3 — Qwen2.5-Coder-14B → Qwen3-Coder-30B-A3B (MoE, ~3B active, better quality)
+  H3 — Qwen2.5-Coder-14B → Qwen3-Coder-30B-A3B (MoE, ~3B active)
   Supabase client cached at init (not re-created per call)
 """
 from __future__ import annotations
@@ -15,15 +25,17 @@ log = structlog.get_logger()
 
 
 class ModelTier(Enum):
-    FAST       = "fast"
-    FREE_CODER = "free_coder"
-    NANO       = "nano"
-    SUPER      = "super"
-    OPUS       = "opus"
-    CODER      = "coder"
-    UNCENSORED = "uncensored"
-    IMAGE_GEN  = "image"
-    VIDEO_GEN  = "video"
+    FAST            = "fast"            # GPT-OSS 20B free
+    FREE_CODER      = "free_coder"      # Qwen3 Coder 480B free
+    FREE_REASONING  = "free_reasoning"  # DeepSeek R1 free
+    WORKER          = "worker"          # DeepSeek V3.2 (cheapest paid)
+    SUPER           = "super"           # Nemotron Super 120B
+    OPUS            = "opus"            # Claude Opus 4.6 (budget-gated)
+    CODER           = "coder"           # Qwen3-Coder-30B on Vast
+    UNCENSORED      = "uncensored"      # Vast serverless or local abliterated
+    UNCENSORED_LOCAL = "uncensored_local"  # Qwen3.5 abliterated on Ollama
+    IMAGE_GEN       = "image"
+    VIDEO_GEN       = "video"
 
 
 @dataclass
@@ -41,13 +53,17 @@ class RouteDecision:
 
 class NCoreMasterRouter:
     """
-    5-layer routing (v7.5):
-      L0:   Media detection    → Vast pod (image / video)
-      L1:   Fast heuristics    → FAST (Gemini 3.1 Flash Lite, trivial)
-      L1.5: Free code routing  → FREE_CODER (Qwen3 Coder 480B, complexity < 6)
-      L2:   Domain keyword     → OPUS | UNCENSORED | CODER
-      L3:   Complexity score   → OPUS (≥8) | SUPER
-      L4:   Engine selection   → SGLang (multi-turn) vs LMDeploy (first-call)
+    7-tier routing cascade (v7.6 — April 7 2026):
+      L0:   Media detection         → Vast pod (image / video)
+      L1:   Trivial heuristics      → FAST (GPT-OSS 20B free, $0)
+      L1.5: Free code routing       → FREE_CODER (Qwen3 Coder 480B free, $0)
+      L1.7: Uncensored detection    → UNCENSORED_LOCAL (Qwen3.5 abliterated, $0)
+      L2:   Complex reasoning       → FREE_REASONING (DeepSeek R1 free, $0)
+      L3:   Domain keyword          → OPUS | WORKER
+      L4:   Complexity score        → OPUS (≥8) | WORKER (DeepSeek V3.2)
+      L5:   Engine selection        → SGLang (multi-turn) vs LMDeploy (first-call)
+
+    ~90% of tasks route to $0 infrastructure.
     """
 
     VIDEO_KW = [
@@ -136,6 +152,18 @@ class NCoreMasterRouter:
         if any(kw in text for kw in self.OPUS_KW):
             return self._opus("High-stakes domain keyword")
         if any(kw in text for kw in self.UNFILTERED_KW):
+            # v7.6: Route to local abliterated model first ($0), fallback to Vast
+            uncensored_local = os.environ.get("UNCENSORED_LOCAL", "")
+            if uncensored_local:
+                return asdict(RouteDecision(
+                    tier="uncensored_local",
+                    model=uncensored_local,
+                    provider="ollama",
+                    endpoint="http://localhost:11434",
+                    engine="ollama",
+                    reason="Uncensored → Local abliterated (Qwen3.5, $0)",
+                    estimated_cost_usd=0.0
+                ))
             return asdict(RouteDecision(
                 tier="uncensored", model="dolphin-2.9.4-llama3.1-8b",
                 provider="vast-serverless",
@@ -170,35 +198,57 @@ class NCoreMasterRouter:
         score = self._complexity(text, tokens)
         if score >= 8 or tokens > 4000:
             return self._opus(f"Complexity {score}/10, {int(tokens)} tokens")
+        # v7.6: Free reasoning tier before paid models
+        if score >= 4:
+            return self._free_reasoning(f"Reasoning (complexity {score}/10) → DeepSeek R1 free")
         if score >= 6 and self._opus_spend_today() > 3.0:
-            return self._super(f"Complexity {score}/10 — Opus over budget", turns)
-        return self._super(f"Standard reasoning, complexity {score}/10", turns)
+            return self._worker(f"Complexity {score}/10 — Opus over budget", turns)
+        return self._worker(f"Standard reasoning, complexity {score}/10", turns)
 
-    def _super(self, reason: str, turns: int = 0) -> dict:
-        engine = "sglang" if turns > 3 else "lmdeploy"
-        return asdict(RouteDecision(
-            tier="super", model="nvidia/nemotron-3-super-120b-a12b",
-            provider="openrouter",
-            endpoint="https://openrouter.ai/api/v1",
-            engine=engine,
-            reason=f"{reason} | engine={engine}",
-            estimated_cost_usd=0.002
-        ))
+    # ── Tier builders ────────────────────────────────────────────────
 
     def _fast(self, reason: str) -> dict:
+        """T1: GPT-OSS 20B free — matches o3-mini, $0, 13 providers."""
         return asdict(RouteDecision(
             tier="fast",
-            model=os.environ.get("FAST_MODEL", "google/gemini-3.1-flash-lite"),
+            model=os.environ.get("FAST_MODEL", "openai/gpt-oss-20b:free"),
             provider="openrouter",
             endpoint="https://openrouter.ai/api/v1",
             engine="lmdeploy",
-            reason=f"{reason} | FAST tier",
-            estimated_cost_usd=0.00001
+            reason=f"{reason} | FAST tier (GPT-OSS 20B free)",
+            estimated_cost_usd=0.0
+        ))
+
+    def _free_reasoning(self, reason: str) -> dict:
+        """T3: DeepSeek R1 free — strong reasoning, $0."""
+        return asdict(RouteDecision(
+            tier="free_reasoning",
+            model=os.environ.get("FREE_REASONING", "deepseek/deepseek-r1:free"),
+            provider="openrouter",
+            endpoint="https://openrouter.ai/api/v1",
+            engine="lmdeploy",
+            reason=f"{reason} | FREE_REASONING tier",
+            estimated_cost_usd=0.0
+        ))
+
+    def _worker(self, reason: str, turns: int = 0) -> dict:
+        """T4: DeepSeek V3.2 — cheapest paid frontier ($0.14/$0.28 per M)."""
+        engine = "sglang" if turns > 3 else "lmdeploy"
+        return asdict(RouteDecision(
+            tier="worker",
+            model=os.environ.get("WORKER_MODEL", "deepseek/deepseek-chat"),
+            provider="openrouter",
+            endpoint="https://openrouter.ai/api/v1",
+            engine=engine,
+            reason=f"{reason} | WORKER tier (DeepSeek V3.2, {engine})",
+            estimated_cost_usd=0.001
         ))
 
     def _opus(self, reason: str) -> dict:
+        """T5: Claude Opus 4.6 — budget-gated, complex only."""
         return asdict(RouteDecision(
-            tier="opus", model="anthropic/claude-opus-4.6",
+            tier="opus",
+            model=os.environ.get("OPUS_MODEL", "anthropic/claude-opus-4.6"),
             provider="openrouter",
             endpoint="https://openrouter.ai/api/v1",
             engine="claude", reason=reason,

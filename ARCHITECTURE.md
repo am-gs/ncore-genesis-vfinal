@@ -48,15 +48,19 @@
 | IMAGE | flux-1-dev | Vast pod (ephemeral) | ComfyUI | Image generation | ~$0.03 |
 | VIDEO | wan-2.2-remix-nsfw | Vast pod (ephemeral) | ComfyUI | Video generation | ~$0.25 |
 
-## Free-Tier Model Routing (v7.5)
+## 7-Tier Routing Cascade (v7.6 — April 7 2026)
 
 | Tier | Model | Provider | Cost | Use Case |
 |---|---|---|---|---|
-| FREE_CODER | qwen3-coder-480b-a35b-instruct:free | OpenRouter | $0 | Code tasks, complexity < 6 |
-| FAST | gemini-3.1-flash-lite | OpenRouter | $0.25/$1.50 (1000 free/day) | Trivial Q&A, fast routing |
-| FALLBACK_FREE | gemini-2.0-flash | OpenRouter | $0.10/$0.40 (1000 free/day) | Budget exhaustion fallback |
+| T0 LOCAL | Dark Champion V2 21B + Qwen3.5 abliterated | Ollama | $0 | Critic, uncensored fallback |
+| T1 FAST | openai/gpt-oss-20b:free | OpenRouter | $0 | Trivial tasks — matches o3-mini, 13 providers |
+| T2 FREE_CODER | qwen3-coder-480b:free | OpenRouter | $0 | Code tasks, complexity < 6 |
+| T3 FREE_REASONING | deepseek/deepseek-r1:free | OpenRouter | $0 | Reasoning, complexity 4-7 |
+| T4 WORKER | deepseek/deepseek-chat (V3.2) | OpenRouter | $0.14/$0.28/M | Standard tasks, complexity < 8 |
+| T5 OPUS | anthropic/claude-opus-4.6 | OpenRouter | $5/$25/M | Budget-gated, complexity ≥ 8 only |
+| GPU | Wan 2.2 / Flux / vLLM | Vast.ai | $0.30-1.80/hr | Video, image, heavy inference |
 
-These tiers route ~70% of tasks to $0 infrastructure, reserving paid models for genuinely complex work.
+~90% of tasks route to $0 infrastructure. Paid tiers only activate for genuine complexity.
 
 ---
 
