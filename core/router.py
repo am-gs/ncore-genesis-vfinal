@@ -177,58 +177,38 @@ class NCoreMasterRouter:
         # L1.1: High-stakes domain keywords → OPUS (check BEFORE investigation/code)
         if any(kw in text for kw in self.OPUS_KW):
             return self._opus("High-stakes domain keyword")
-        # L0.5: Investigation/OSINT → Agent Zero for autonomous tool execution
+        # L0.5: Investigation/OSINT → DeepSeek R1 (reasoning + uncensored)
         if any(kw in text for kw in self.INVESTIGATION_KW):
             return asdict(RouteDecision(
                 tier="investigation",
-                model="agent-zero",
-                provider="agent-zero",
-                endpoint=os.environ.get("AGENT_ZERO_URL", "http://localhost:8090"),
-                engine="agent-zero",
-                reason="Investigation/OSINT → Agent Zero autonomous execution",
-                estimated_cost_usd=0.01,
+                model=os.environ.get("REASONING_MODEL", "deepseek/deepseek-r1"),
+                provider="openrouter",
+                endpoint="https://openrouter.ai/api/v1",
+                engine="direct",
+                reason="Investigation/OSINT → DeepSeek R1",
+                estimated_cost_usd=0.005,
             ))
+        # L1.7: Uncensored → DeepSeek V3 (fast, cheap, doesn't refuse much)
         if any(kw in text for kw in self.UNFILTERED_KW):
-            # v7.6: Route to local abliterated model first ($0), fallback to Vast
-            uncensored_local = os.environ.get("UNCENSORED_LOCAL", "")
-            if uncensored_local:
-                return asdict(RouteDecision(
-                    tier="uncensored_local",
-                    model=uncensored_local,
-                    provider="ollama",
-                    endpoint="http://localhost:11434",
-                    engine="ollama",
-                    reason="Uncensored → Local abliterated (Qwen3.5, $0)",
-                    estimated_cost_usd=0.0
-                ))
             return asdict(RouteDecision(
-                tier="uncensored", model="dolphin-2.9.4-llama3.1-8b",
-                provider="vast-serverless",
-                endpoint=os.environ.get("VAST_UNCENSORED_URL", "https://openrouter.ai/api/v1"),
-                engine="sglang",
-                reason="Uncensored → Dolphin on Vast serverless",
+                tier="uncensored",
+                model=os.environ.get("WORKER_MODEL", "deepseek/deepseek-chat"),
+                provider="openrouter",
+                endpoint="https://openrouter.ai/api/v1",
+                engine="direct",
+                reason="Uncensored → DeepSeek V3",
                 estimated_cost_usd=0.001
             ))
         if any(kw in text for kw in self.CODE_KW):
             complexity = self._complexity(text, tokens)
-            if complexity < 6:
-                return asdict(RouteDecision(
-                    tier="free_coder",
-                    model=os.environ.get("FREE_CODER_MODEL", "qwen/qwen3-coder-480b-a35b-instruct:free"),
-                    provider="openrouter",
-                    endpoint="https://openrouter.ai/api/v1",
-                    engine="lmdeploy",
-                    reason=f"Code task (complexity {complexity}/10) → FREE_CODER",
-                    estimated_cost_usd=0.0
-                ))
-            engine = "sglang" if turns > 2 else "lmdeploy"
+            # All code tasks → DeepSeek V3 (fast, cheap, uncensored for code)
             return asdict(RouteDecision(
                 tier="coder",
-                model="Qwen/Qwen3-Coder-30B-A3B-Instruct",   # H3: updated from Qwen2.5
-                provider="vast-serverless",
-                endpoint=os.environ.get("VAST_CODER_URL", "https://openrouter.ai/api/v1"),
-                engine=engine,
-                reason=f"Code task (complexity {complexity}/10) → Qwen3-Coder ({engine})",
+                model=os.environ.get("CODER_MODEL", "deepseek/deepseek-chat"),
+                provider="openrouter",
+                endpoint="https://openrouter.ai/api/v1",
+                engine="direct",
+                reason=f"Code task (complexity {complexity}/10) → CODER",
                 estimated_cost_usd=0.001
             ))
 
@@ -248,39 +228,38 @@ class NCoreMasterRouter:
     # ── Tier builders ────────────────────────────────────────────────
 
     def _fast(self, reason: str) -> dict:
-        """T1: GPT-OSS 20B free — matches o3-mini, $0, 13 providers."""
+        """T1: GPT-4.1 mini — fast, cheap ($0.40/M in, $1.60/M out), no rate limits."""
         return asdict(RouteDecision(
             tier="fast",
-            model=os.environ.get("FAST_MODEL", "openai/gpt-oss-20b:free"),
+            model=os.environ.get("FAST_MODEL", "openai/gpt-4.1-mini"),
             provider="openrouter",
             endpoint="https://openrouter.ai/api/v1",
             engine="lmdeploy",
-            reason=f"{reason} | FAST tier (GPT-OSS 20B free)",
-            estimated_cost_usd=0.0
+            reason=f"{reason} | FAST tier",
+            estimated_cost_usd=0.001
         ))
 
     def _free_reasoning(self, reason: str) -> dict:
-        """T3: DeepSeek R1 free — strong reasoning, $0."""
+        """T3: DeepSeek R1 — strong reasoning, cheap ($0.55/M in, $2.19/M out)."""
         return asdict(RouteDecision(
             tier="free_reasoning",
-            model=os.environ.get("FREE_REASONING", "deepseek/deepseek-r1:free"),
+            model=os.environ.get("REASONING_MODEL", "deepseek/deepseek-r1"),
             provider="openrouter",
             endpoint="https://openrouter.ai/api/v1",
             engine="lmdeploy",
-            reason=f"{reason} | FREE_REASONING tier",
-            estimated_cost_usd=0.0
+            reason=f"{reason} | REASONING tier",
+            estimated_cost_usd=0.005
         ))
 
     def _worker(self, reason: str, turns: int = 0) -> dict:
-        """T4: DeepSeek V3.2 — cheapest paid frontier ($0.14/$0.28 per M)."""
-        engine = "sglang" if turns > 3 else "lmdeploy"
+        """T4: DeepSeek V3 — cheapest paid frontier ($0.14/$0.28 per M)."""
         return asdict(RouteDecision(
             tier="worker",
             model=os.environ.get("WORKER_MODEL", "deepseek/deepseek-chat"),
             provider="openrouter",
             endpoint="https://openrouter.ai/api/v1",
-            engine=engine,
-            reason=f"{reason} | WORKER tier (DeepSeek V3.2, {engine})",
+            engine="direct",
+            reason=f"{reason} | WORKER tier",
             estimated_cost_usd=0.001
         ))
 
