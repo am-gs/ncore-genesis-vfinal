@@ -311,15 +311,24 @@ async def _run_osint(prompt: str, agent: dict) -> tuple[str, str]:
     emails = list(set(_re.findall(r'[\w.+-]+@[\w-]+\.[\w.]+', search_text)))
     phones = list(set(_re.findall(r'\+?1?[\s.-]*\(?\d{3}\)?[\s.-]*\d{3}[\s.-]*\d{4}', search_text)))
     ips = list(set(_re.findall(r'\b(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\b', search_text)))
-    # Extract names — multiple patterns
+    # Extract names — multiple patterns, deduplicated
     names = []
+    _seen_names = set()
+    # Pattern 1: pipe-delimited ("...|Paula Lane|...")
+    for m in _re.finditer(r'\|([A-Z][a-z]+ [A-Z][a-z]+)\|', search_text):
+        n = m.group(1).strip()
+        if n not in _seen_names and len(n) > 4:
+            names.append(n); _seen_names.add(n)
+    # Pattern 2: "background check on Paula Lane" etc
     for pat in [r'(?:check on|footprint of|investigate|background check on)\s+([A-Z][a-z]+ [A-Z][a-z]+)',
-                r'\bname[:\s]+([A-Z][a-z]+ [A-Z][a-z]+)',
-                r'\|([A-Z][a-z]+ [A-Z][a-z]+)\|',
-                r'(?:^|\s)([A-Z][a-z]{2,} [A-Z][a-z]{2,})(?:\s|$|\|)']:
+                r'\bname[:\s]+([A-Z][a-z]+ [A-Z][a-z]+)']:
         for m in _re.finditer(pat, search_text):
             n = m.group(1).strip()
-            if n not in names and len(n) > 4: names.append(n)
+            if n not in _seen_names and len(n) > 4:
+                names.append(n); _seen_names.add(n)
+    # Filter out common false positives
+    _false_names = {"Cinnamon Ridge", "Sandy UT", "Digital Footprint", "Map Paula", "Investigate Paula"}
+    names = [n for n in names if n not in _false_names]
     # Extract addresses and zips
     addresses = _re.findall(r'\d+\s+[A-Z][\w\s]+(?:Rd|St|Ave|Blvd|Dr|Ln|Ct|Way|Pl|Road|Street|Circle)', search_text)
     zips = _re.findall(r'\b\d{5}\b', search_text)

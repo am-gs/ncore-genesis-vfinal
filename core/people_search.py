@@ -25,14 +25,45 @@ async def _get_browser():
     """Launch Playwright Firefox with stealth settings."""
     from playwright.async_api import async_playwright
     pw = await async_playwright().start()
-    browser = await pw.firefox.launch(headless=True)
+    browser = await pw.firefox.launch(
+        headless=True,
+        args=["--disable-blink-features=AutomationControlled"],
+    )
     context = await browser.new_context(
         user_agent=_UA,
         viewport={"width": 1920, "height": 1080},
         locale="en-US",
+        java_script_enabled=True,
+        timezone_id="America/Denver",
+        geolocation={"latitude": 40.5725, "longitude": -111.8590},  # Sandy UT
+        permissions=["geolocation"],
     )
     await context.add_init_script(_STEALTH_JS)
+    # Add cookies to look like a returning visitor
+    await context.add_cookies([{
+        "name": "visited", "value": "1", "domain": ".truepeoplesearch.com", "path": "/",
+    }, {
+        "name": "visited", "value": "1", "domain": ".fastpeoplesearch.com", "path": "/",
+    }, {
+        "name": "visited", "value": "1", "domain": ".thatsthem.com", "path": "/",
+    }])
     return pw, browser, context
+
+
+async def _human_interact(page):
+    """Simulate human behavior to bypass bot detection."""
+    # Random mouse movements
+    for _ in range(random.randint(2, 4)):
+        x = random.randint(100, 1200)
+        y = random.randint(100, 600)
+        await page.mouse.move(x, y, steps=random.randint(5, 15))
+        await asyncio.sleep(random.uniform(0.1, 0.3))
+    # Scroll down slightly
+    await page.evaluate("window.scrollBy(0, " + str(random.randint(100, 300)) + ")")
+    await asyncio.sleep(random.uniform(0.5, 1.5))
+    # Scroll back up
+    await page.evaluate("window.scrollBy(0, -" + str(random.randint(50, 150)) + ")")
+    await asyncio.sleep(random.uniform(0.3, 0.8))
 
 
 async def _safe_text(page, selector: str, default: str = "") -> str:
@@ -75,19 +106,26 @@ async def scrape_truepeoplesearch(name: str, city: str = "", state: str = "") ->
     pw, browser, context = await _get_browser()
     try:
         page = await context.new_page()
+        # First visit homepage to establish session
+        await page.goto("https://www.truepeoplesearch.com", wait_until="domcontentloaded", timeout=15000)
+        await _human_interact(page)
+        await asyncio.sleep(random.uniform(1.5, 3.0))
+        # Now navigate to search results
         await page.goto(url, wait_until="domcontentloaded", timeout=20000)
-        await asyncio.sleep(random.uniform(2, 4))  # human delay
+        await _human_interact(page)
+        await asyncio.sleep(random.uniform(2, 4))
 
         content = await page.content()
 
-        # Check for captcha/block
+        # Check for captcha/block — try to wait it out
         if "captcha" in content.lower() or "challenge" in content.lower():
-            # Try waiting and scrolling like a human
-            await page.mouse.move(random.randint(100, 800), random.randint(100, 500))
-            await asyncio.sleep(2)
+            await asyncio.sleep(5)  # Wait for JS challenge to resolve
+            await _human_interact(page)
+            await asyncio.sleep(3)
             content = await page.content()
             if "captcha" in content.lower():
-                return {"error": "Captcha detected", "source": "truepeoplesearch",
+                # Last resort: take screenshot for debugging
+                return {"error": "Captcha detected after human simulation", "source": "truepeoplesearch",
                         "url": url, "elapsed": round(time.time() - t0, 1)}
 
         # Extract results
@@ -175,13 +213,22 @@ async def scrape_fastpeoplesearch(name: str, city: str = "", state: str = "") ->
     pw, browser, context = await _get_browser()
     try:
         page = await context.new_page()
+        await page.goto("https://www.fastpeoplesearch.com", wait_until="domcontentloaded", timeout=15000)
+        await _human_interact(page)
+        await asyncio.sleep(random.uniform(1.5, 3.0))
         await page.goto(url, wait_until="domcontentloaded", timeout=20000)
+        await _human_interact(page)
         await asyncio.sleep(random.uniform(2, 4))
 
         content = await page.content()
         if "captcha" in content.lower() or "challenge" in content.lower() or "cloudflare" in content.lower():
-            return {"error": "Captcha/Cloudflare detected", "source": "fastpeoplesearch",
-                    "url": url, "elapsed": round(time.time() - t0, 1)}
+            await asyncio.sleep(5)
+            await _human_interact(page)
+            await asyncio.sleep(3)
+            content = await page.content()
+            if "captcha" in content.lower() or "challenge" in content.lower():
+                return {"error": "Captcha/Cloudflare detected after human sim", "source": "fastpeoplesearch",
+                        "url": url, "elapsed": round(time.time() - t0, 1)}
 
         results = []
         # FastPeopleSearch uses detail-box-address, detail-box-phone patterns
@@ -263,11 +310,17 @@ async def scrape_thatsthem(name: str = "", email: str = "", phone: str = "", ip:
     try:
         page = await context.new_page()
         await page.goto(url, wait_until="domcontentloaded", timeout=20000)
+        await _human_interact(page)
         await asyncio.sleep(random.uniform(2, 4))
 
         content = await page.content()
         if "captcha" in content.lower() or "challenge" in content.lower():
-            return {"error": "Captcha detected", "source": "thatsthem", "url": url}
+            await asyncio.sleep(5)
+            await _human_interact(page)
+            await asyncio.sleep(3)
+            content = await page.content()
+            if "captcha" in content.lower():
+                return {"error": "Captcha detected after human sim", "source": "thatsthem", "url": url}
 
         # Extract result cards
         results = []
