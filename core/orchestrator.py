@@ -505,35 +505,60 @@ Be thorough. Execute every tool. Report raw data, not summaries."""
             log.warning("ncore.agent_zero_fallback", error=str(e))
         # Fall through to regular LLM if Agent Zero fails
 
-    # ── LLM tasks ─────────────────────────────────────────────────────────────
-    api_key = (
-        os.environ.get("OPENROUTER_API_KEY", "")
-        if d["provider"] == "openrouter"
-        else os.environ.get("VAST_API_KEY", "")
-    )
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "HTTP-Referer":  "https://ncore.internal",
-        "X-Title":       "NCore Genesis",
-    }
-    payload = {
-        "model":       d["model"],
-        "messages":    [{"role": "user", "content": state["task"]}],
-        "temperature": 0.1 if d["tier"] in ("nano", "coder") else 0.4,
-        "max_tokens":  8192,
-    }
-    try:
-        # C1: reuse persistent client; M1: tenacity retry on timeout/5xx
-        output = await _call_llm(app.state.http, d["endpoint"], headers, payload)
-    except Exception as e:
-        log.error("ncore.llm_error", error=str(e), model=d["model"])
-        output = f"[LLM error after retries] {e}"
+    # ── LLM tasks — with tier-level fallback cascade ──────────────────────────
+    # Fallback order: primary model → FALLBACK_FREE → FAST_MODEL → WORKER_MODEL
+    FALLBACK_CHAIN = [
+        {"model": d["model"], "endpoint": d["endpoint"], "provider": d["provider"]},
+        {"model": os.environ.get("FAST_MODEL", "openai/gpt-oss-20b:free"),
+         "endpoint": "https://openrouter.ai/api/v1", "provider": "openrouter"},
+        {"model": os.environ.get("FALLBACK_FREE", "google/gemini-2.0-flash-lite-001"),
+         "endpoint": "https://openrouter.ai/api/v1", "provider": "openrouter"},
+        {"model": os.environ.get("WORKER_MODEL", "deepseek/deepseek-chat"),
+         "endpoint": "https://openrouter.ai/api/v1", "provider": "openrouter"},
+    ]
+    # Deduplicate (if primary is already a fallback model)
+    seen = set()
+    chain = []
+    for fb in FALLBACK_CHAIN:
+        if fb["model"] not in seen:
+            seen.add(fb["model"])
+            chain.append(fb)
+
+    output = None
+    used_model = d["model"]
+    for i, fb in enumerate(chain):
+        api_key = (
+            os.environ.get("OPENROUTER_API_KEY", "")
+            if fb["provider"] == "openrouter"
+            else os.environ.get("VAST_API_KEY", "")
+        )
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "HTTP-Referer":  "https://ncore.internal",
+            "X-Title":       "NCore Genesis",
+        }
+        payload = {
+            "model":       fb["model"],
+            "messages":    [{"role": "user", "content": state["task"]}],
+            "temperature": 0.1 if d["tier"] in ("nano", "coder") else 0.4,
+            "max_tokens":  8192,
+        }
+        try:
+            output = await _call_llm(app.state.http, fb["endpoint"], headers, payload)
+            used_model = fb["model"]
+            if i > 0:
+                log.info("ncore.fallback_success", original=d["model"], fallback=fb["model"], attempt=i)
+            break
+        except Exception as e:
+            log.warning("ncore.llm_attempt_failed", model=fb["model"], attempt=i, error=str(e))
+            if i == len(chain) - 1:
+                output = f"[LLM error after all fallbacks] {e}"
 
     latency = time.time() - t0
     cost    = d["estimated_cost_usd"]
     update_cost(d["tier"], cost)
-    log.info("ncore.execute", tier=d["tier"], latency_s=round(latency, 3), cost_usd=cost)
-    await broadcast_ws({"type": "result", "data": {"tier": d["tier"], "model": d["model"], "latency_s": round(latency, 3), "cost_usd": cost, "output_preview": output[:200] if isinstance(output, str) else ""}})
+    log.info("ncore.execute", tier=d["tier"], model=used_model, latency_s=round(latency, 3), cost_usd=cost)
+    await broadcast_ws({"type": "result", "data": {"tier": d["tier"], "model": used_model, "latency_s": round(latency, 3), "cost_usd": cost, "output_preview": output[:200] if isinstance(output, str) else ""}})
     return {**state, "output": output, "cost_usd": cost, "latency_s": latency}
 
 
