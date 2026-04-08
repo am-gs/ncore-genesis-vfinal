@@ -212,16 +212,14 @@ class NCoreMasterRouter:
     # ── Tier builders ────────────────────────────────────────────────
 
     def _local_uncensored(self, reason: str) -> dict:
-        """Local Dark Champion 21B abliterated — ZERO filters, guaranteed compliance."""
-        model = os.environ.get("UNCENSORED_LOCAL",
-            "hf.co/DavidAU/Llama-3.2-8X4B-MOE-V2-Dark-Champion-Instruct-uncensored-abliterated-21B-GGUF:Q4_K_M")
+        """Local dolphin3 8B via llama-server — ZERO filters, guaranteed compliance."""
         return asdict(RouteDecision(
             tier="uncensored_local",
-            model=model,
-            provider="ollama",
-            endpoint="http://localhost:11434",
-            engine="ollama",
-            reason=f"{reason} | LOCAL UNCENSORED ($0)",
+            model="dolphin3-8b",
+            provider="llama-server",
+            endpoint=os.environ.get("LOCAL_LLM_URL", "http://localhost:9090"),
+            engine="llama-cpp",
+            reason=f"{reason} | LOCAL UNCENSORED (dolphin3, $0)",
             estimated_cost_usd=0.0
         ))
 
