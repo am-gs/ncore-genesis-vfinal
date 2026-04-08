@@ -305,21 +305,24 @@ async def _run_osint(prompt: str, agent: dict) -> tuple[str, str]:
     """Execute real OSINT tools in parallel. Returns raw intelligence."""
     import re as _re
 
-    # Extract all targets
-    emails = _re.findall(r'[\w.+-]+@[\w-]+\.[\w.]+', prompt)
-    phones = _re.findall(r'\+?1?\s*\(?\d{3}\)?[\s.-]*\d{3}[\s.-]*\d{4}', prompt)
-    ips = _re.findall(r'\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b', prompt)
-    # Extract names
+    # Extract all targets from the FULL original task (not just this agent's prompt)
+    # Also search the original user task stored in the blackboard
+    search_text = prompt
+    emails = list(set(_re.findall(r'[\w.+-]+@[\w-]+\.[\w.]+', search_text)))
+    phones = list(set(_re.findall(r'\+?1?[\s.-]*\(?\d{3}\)?[\s.-]*\d{3}[\s.-]*\d{4}', search_text)))
+    ips = list(set(_re.findall(r'\b(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\b', search_text)))
+    # Extract names — multiple patterns
     names = []
     for pat in [r'(?:check on|footprint of|investigate|background check on)\s+([A-Z][a-z]+ [A-Z][a-z]+)',
-                r'name[:\s]+([A-Z][a-z]+ [A-Z][a-z]+)',
-                r'\|([A-Z][a-z]+ [A-Z][a-z]+)\|']:
-        m = _re.search(pat, prompt)
-        if m: names.append(m.group(1))
-    # Extract addresses
-    addresses = _re.findall(r'\d+ [A-Z][\w\s]+ (?:Rd|St|Ave|Blvd|Dr|Ln|Ct|Way|Pl)', prompt)
-    # Extract state/zip
-    zips = _re.findall(r'\b\d{5}\b', prompt)
+                r'\bname[:\s]+([A-Z][a-z]+ [A-Z][a-z]+)',
+                r'\|([A-Z][a-z]+ [A-Z][a-z]+)\|',
+                r'(?:^|\s)([A-Z][a-z]{2,} [A-Z][a-z]{2,})(?:\s|$|\|)']:
+        for m in _re.finditer(pat, search_text):
+            n = m.group(1).strip()
+            if n not in names and len(n) > 4: names.append(n)
+    # Extract addresses and zips
+    addresses = _re.findall(r'\d+\s+[A-Z][\w\s]+(?:Rd|St|Ave|Blvd|Dr|Ln|Ct|Way|Pl|Road|Street|Circle)', search_text)
+    zips = _re.findall(r'\b\d{5}\b', search_text)
 
     PATH = "/home/ubuntu/.local/bin:/usr/local/bin:/usr/bin:/bin"
     tasks = []  # async tasks to run in parallel
