@@ -434,6 +434,15 @@ async def execute_agents(client: httpx.AsyncClient, agents: list[dict],
             tokens_in = tokens_out = 0
             used_model = ""
 
+            # Auto-detect tool from prompt/role if planner didn't set it
+            if not tool:
+                lower_role = role.lower()
+                lower_prompt = prompt.lower()
+                if any(kw in lower_role + lower_prompt for kw in ["osint", "breach", "hibp", "leaked", "leak check", "sherlock", "holehe", "ip lookup", "phone lookup", "digital footprint", "background check"]):
+                    tool = "osint"
+                elif any(kw in lower_role + lower_prompt for kw in ["browser automation", "navigate to", "signup", "create account", "fill form"]):
+                    tool = "browser"
+
             # ── TOOL EXECUTION (real commands, not LLM hallucination) ────
             if tool == "osint":
                 output, used_model = await _run_osint(full_prompt, agent)
