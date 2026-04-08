@@ -177,28 +177,12 @@ class NCoreMasterRouter:
         # L1.1: High-stakes domain keywords → OPUS (check BEFORE investigation/code)
         if any(kw in text for kw in self.OPUS_KW):
             return self._opus("High-stakes domain keyword")
-        # L0.5: Investigation/OSINT → DeepSeek R1 (reasoning + uncensored)
+        # L0.5: Investigation/OSINT → Local Dark Champion (guaranteed uncensored)
         if any(kw in text for kw in self.INVESTIGATION_KW):
-            return asdict(RouteDecision(
-                tier="investigation",
-                model=os.environ.get("REASONING_MODEL", "deepseek/deepseek-r1"),
-                provider="openrouter",
-                endpoint="https://openrouter.ai/api/v1",
-                engine="direct",
-                reason="Investigation/OSINT → DeepSeek R1",
-                estimated_cost_usd=0.005,
-            ))
-        # L1.7: Uncensored → DeepSeek V3 (fast, cheap, doesn't refuse much)
+            return self._local_uncensored("Investigation/OSINT → Local abliterated")
+        # L1.7: Uncensored/unfiltered → Local Dark Champion (guaranteed uncensored)
         if any(kw in text for kw in self.UNFILTERED_KW):
-            return asdict(RouteDecision(
-                tier="uncensored",
-                model=os.environ.get("WORKER_MODEL", "deepseek/deepseek-chat"),
-                provider="openrouter",
-                endpoint="https://openrouter.ai/api/v1",
-                engine="direct",
-                reason="Uncensored → DeepSeek V3",
-                estimated_cost_usd=0.001
-            ))
+            return self._local_uncensored("Uncensored request → Local abliterated")
         if any(kw in text for kw in self.CODE_KW):
             complexity = self._complexity(text, tokens)
             # All code tasks → DeepSeek V3 (fast, cheap, uncensored for code)
@@ -227,16 +211,30 @@ class NCoreMasterRouter:
 
     # ── Tier builders ────────────────────────────────────────────────
 
+    def _local_uncensored(self, reason: str) -> dict:
+        """Local Dark Champion 21B abliterated — ZERO filters, guaranteed compliance."""
+        model = os.environ.get("UNCENSORED_LOCAL",
+            "hf.co/DavidAU/Llama-3.2-8X4B-MOE-V2-Dark-Champion-Instruct-uncensored-abliterated-21B-GGUF:Q4_K_M")
+        return asdict(RouteDecision(
+            tier="uncensored_local",
+            model=model,
+            provider="ollama",
+            endpoint="http://localhost:11434",
+            engine="ollama",
+            reason=f"{reason} | LOCAL UNCENSORED ($0)",
+            estimated_cost_usd=0.0
+        ))
+
     def _fast(self, reason: str) -> dict:
-        """T1: GPT-4.1 mini — fast, cheap ($0.40/M in, $1.60/M out), no rate limits."""
+        """T1: GPT-4.1 nano — fastest cloud, cheapest paid."""
         return asdict(RouteDecision(
             tier="fast",
-            model=os.environ.get("FAST_MODEL", "openai/gpt-4.1-mini"),
+            model=os.environ.get("FAST_MODEL", "openai/gpt-4.1-nano"),
             provider="openrouter",
             endpoint="https://openrouter.ai/api/v1",
-            engine="lmdeploy",
+            engine="direct",
             reason=f"{reason} | FAST tier",
-            estimated_cost_usd=0.001
+            estimated_cost_usd=0.0005
         ))
 
     def _free_reasoning(self, reason: str) -> dict:
