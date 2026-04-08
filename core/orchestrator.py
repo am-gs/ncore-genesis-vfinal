@@ -320,18 +320,32 @@ async def execute_agents(client: httpx.AsyncClient, agents: list[dict],
 
             full_prompt = prompt + plan_context
 
-            if uncensored and has_local:
-                msgs = [{"role": "user", "content": full_prompt}]
-                llm_result = await call_local(client, msgs, max_tokens=max_tok)
-                provider = "local"
-            else:
-                model = os.environ.get("WORKER_MODEL", "deepseek/deepseek-chat")
-                msgs = [
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": full_prompt},
-                ]
+            # Cloud-first for speed. Local only as fallback.
+            # DeepSeek V3 with system prompt handles most uncensored tasks.
+            model = os.environ.get("WORKER_MODEL", "deepseek/deepseek-chat")
+            msgs = [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": full_prompt},
+            ]
+            try:
                 llm_result = await call_cloud(client, model, msgs, max_tokens=max_tok)
                 provider = "cloud"
+                # Check if cloud refused — fall back to local
+                content = llm_result.get("content", "")
+                refused = any(x in content.lower() for x in ["i cannot", "i can't", "i'm sorry", "i am not able", "not able to assist"])
+                if refused and uncensored and has_local:
+                    log.info("ncore.cloud_refused_fallback_local", role=role)
+                    msgs = [{"role": "user", "content": full_prompt}]
+                    llm_result = await call_local(client, msgs, max_tokens=max_tok)
+                    provider = "local"
+            except Exception as cloud_err:
+                if uncensored and has_local:
+                    log.warning("ncore.cloud_failed_fallback_local", role=role, error=str(cloud_err))
+                    msgs = [{"role": "user", "content": full_prompt}]
+                    llm_result = await call_local(client, msgs, max_tokens=max_tok)
+                    provider = "local"
+                else:
+                    raise cloud_err
 
             output = llm_result["content"]
             tokens_in = llm_result.get("tokens_in", 0)
