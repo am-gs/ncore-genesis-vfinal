@@ -302,77 +302,94 @@ async def _run_shell(cmd: str, timeout: int = 60) -> str:
 
 
 async def _run_osint(prompt: str, agent: dict) -> tuple[str, str]:
-    """Execute real OSINT tools based on the prompt content."""
-    results = []
-    text = prompt.lower()
-
-    # Extract targets from prompt
+    """Execute real OSINT tools in parallel. Returns raw intelligence."""
     import re as _re
+
+    # Extract all targets
     emails = _re.findall(r'[\w.+-]+@[\w-]+\.[\w.]+', prompt)
-    phones = _re.findall(r'\+?\d[\d\s()-]{7,15}\d', prompt)
+    phones = _re.findall(r'\+?1?\s*\(?\d{3}\)?[\s.-]*\d{3}[\s.-]*\d{4}', prompt)
     ips = _re.findall(r'\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b', prompt)
+    # Extract names
     names = []
-    # Try to extract names (words after "on" or "of" or name-like patterns)
-    name_match = _re.search(r'(?:check on|footprint of|investigate)\s+([A-Z][a-z]+ [A-Z][a-z]+)', prompt)
-    if name_match:
-        names.append(name_match.group(1))
+    for pat in [r'(?:check on|footprint of|investigate|background check on)\s+([A-Z][a-z]+ [A-Z][a-z]+)',
+                r'name[:\s]+([A-Z][a-z]+ [A-Z][a-z]+)',
+                r'\|([A-Z][a-z]+ [A-Z][a-z]+)\|']:
+        m = _re.search(pat, prompt)
+        if m: names.append(m.group(1))
+    # Extract addresses
+    addresses = _re.findall(r'\d+ [A-Z][\w\s]+ (?:Rd|St|Ave|Blvd|Dr|Ln|Ct|Way|Pl)', prompt)
+    # Extract state/zip
+    zips = _re.findall(r'\b\d{5}\b', prompt)
 
     PATH = "/home/ubuntu/.local/bin:/usr/local/bin:/usr/bin:/bin"
+    tasks = []  # async tasks to run in parallel
 
-    # HIBP check for emails
+    # ── Build parallel OSINT tasks ─────────────────────────────────
     for email in emails[:3]:
-        results.append(f"## HIBP Check: {email}")
-        r = await _run_shell(f'curl -s -H "User-Agent: NCore-OSINT" "https://haveibeenpwned.com/api/v3/breachedaccount/{email}?truncateResponse=false" 2>&1', 15)
-        if "401" in r or "Unauthorized" in r:
-            results.append("HIBP API requires API key. Checking via holehe instead...")
-            r2 = await _run_shell(f'PATH={PATH} holehe --only-used {email} 2>&1', 30)
-            results.append(r2)
-        elif r.strip():
-            results.append(r)
-        else:
-            results.append("No breaches found or API rate limited.")
-
-    # holehe (email account existence)
-    for email in emails[:2]:
-        results.append(f"\n## Holehe (Account Discovery): {email}")
-        r = await _run_shell(f'PATH={PATH} holehe --only-used {email} 2>&1 | head -50', 45)
-        results.append(r if r.strip() else "No results")
-
-    # IP lookup
-    for ip in ips[:3]:
-        results.append(f"\n## IP Intelligence: {ip}")
-        r = await _run_shell(f'curl -s "http://ip-api.com/json/{ip}?fields=status,message,country,regionName,city,zip,isp,org,as,proxy,hosting" 2>&1', 10)
-        results.append(r)
-        # Reverse DNS
-        r2 = await _run_shell(f'dig -x {ip} +short 2>&1', 10)
-        if r2.strip():
-            results.append(f"Reverse DNS: {r2.strip()}")
-
-    # Phone lookup
-    for phone in phones[:2]:
-        clean = _re.sub(r'[^\d+]', '', phone)
-        results.append(f"\n## Phone Intelligence: {clean}")
-        r = await _run_shell(f'curl -s "https://api.numlookupapi.com/v1/validate/{clean}" 2>&1', 10)
-        results.append(r if r.strip() else "API unavailable")
-
-    # WHOIS on any domains found in emails
-    for email in emails[:2]:
-        domain = email.split("@")[1] if "@" in email else None
-        if domain and domain not in ("gmail.com", "yahoo.com", "hotmail.com", "outlook.com"):
-            results.append(f"\n## WHOIS: {domain}")
-            r = await _run_shell(f'whois {domain} 2>&1 | head -30', 15)
-            results.append(r)
-
-    # Sherlock username search
-    for email in emails[:1]:
         username = email.split("@")[0]
-        results.append(f"\n## Sherlock Username Search: {username}")
-        r = await _run_shell(f'PATH={PATH} sherlock {username} --timeout 10 --print-found 2>&1 | head -30', 30)
-        results.append(r if r.strip() else "No results")
+        # LeakCheck (returns real breach data)
+        tasks.append((f"BREACH DATA: {email}",
+            _run_shell(f'curl -s "https://leakcheck.io/api/public?check={email}"', 15)))
+        # Holehe (account discovery, strip progress bars)
+        tasks.append((f"ACCOUNT DISCOVERY: {email}",
+            _run_shell(f'PATH={PATH} holehe --only-used --no-color {email} 2>&1 | grep -E "^\[\+\]|^\*|websites checked" | head -30', 45)))
+        # Maigret username search (parallel, strip progress bars)
+        tasks.append((f"USERNAME SEARCH: {username}",
+            _run_shell(f'PATH={PATH} timeout 30 maigret {username} --timeout 8 --no-color --print-found 2>&1 | grep -E "^\[\+\]" | head -25', 35)))
 
-    output = "\n".join(results)
-    if not output.strip():
-        output = "No targets extracted from prompt. Provide emails, IPs, or phone numbers."
+    for ip in ips[:3]:
+        # ip-api (full geolocation)
+        tasks.append((f"IP GEOLOCATION: {ip}",
+            _run_shell(f'curl -s "http://ip-api.com/json/{ip}?fields=66846719"', 10)))
+        # ipinfo.io (hostname, org)
+        tasks.append((f"IP INFO: {ip}",
+            _run_shell(f'curl -s "https://ipinfo.io/{ip}/json"', 10)))
+        # Reverse DNS
+        tasks.append((f"REVERSE DNS: {ip}",
+            _run_shell(f'dig -x {ip} +short', 10)))
+
+    for phone in phones[:2]:
+        clean = _re.sub(r'[^\d]', '', phone)
+        if len(clean) == 10: clean = "1" + clean
+        # Free carrier lookup
+        tasks.append((f"PHONE CARRIER: +{clean}",
+            _run_shell(f'curl -s "https://freecarrierlookup.com/getcarrier.php?cc=1&phonenumber={clean[-10:]}"', 10)))
+        # Caller ID / Spy Dialer
+        tasks.append((f"PHONE OSINT: +{clean}",
+            _run_shell(f'curl -s -A "Mozilla/5.0" "https://api.veriphone.io/v2/verify?phone=+{clean}" 2>&1 | head -c 500', 10)))
+
+    for name in names[:2]:
+        fn, ln = name.split(" ", 1) if " " in name else (name, "")
+        state = ""
+        if zips:
+            # Derive state from context
+            for s in ["UT", "GA", "FL", "CA", "TX", "NY"]:
+                if s in prompt.upper(): state = s; break
+        # People search via web
+        tasks.append((f"PEOPLE SEARCH: {name}",
+            _run_shell(f'curl -s -A "Mozilla/5.0" -L "https://www.fastpeoplesearch.com/name/{fn.lower()}-{ln.lower()}" 2>&1 | grep -oP "(?<=<title>).*?(?=</title>)" | head -1', 15)))
+
+    if not tasks:
+        return "No targets extracted. Provide emails, IPs, phone numbers, or names.", "osint-toolkit"
+
+    # ── Execute all tasks in parallel ───────────────────────────────
+    labels = [t[0] for t in tasks]
+    coros = [t[1] for t in tasks]
+    raw_results = await asyncio.gather(*coros, return_exceptions=True)
+
+    output_parts = []
+    for label, result in zip(labels, raw_results):
+        if isinstance(result, Exception):
+            output_parts.append(f"## {label}\n[Error: {result}]")
+        else:
+            # Strip ANSI escape codes and progress bars
+            clean = _re.sub(r'\x1b\[[0-9;]*[a-zA-Z]', '', str(result))
+            clean = _re.sub(r'\r[^\n]*', '', clean)  # strip carriage returns
+            clean = clean.strip()
+            if clean:
+                output_parts.append(f"## {label}\n{clean}")
+
+    output = "\n\n".join(output_parts)
     return output, "osint-toolkit"
 
 
