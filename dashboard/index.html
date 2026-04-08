@@ -1,1091 +1,1900 @@
-<!--
-  NCore Genesis v7.6 — Manus.im-Clone Mission Control Dashboard
-  Single-file, zero-dependency, dark-themed three-panel dashboard.
-
-  === Node.js Proxy Server (optional) ===
-  Save the snippet below as proxy.js and run: node proxy.js
-
-  const http = require('http');
-  const fs = require('fs');
-  const path = require('path');
-  const { createProxyMiddleware } = require('http-proxy-middleware');
-  // npm install http-proxy-middleware
-  const GATEWAY = process.env.NCORE_GATEWAY || 'http://localhost:8080';
-  const PORT = 3002;
-  const server = http.createServer((req, res) => {
-    if (req.url === '/' || req.url === '/index.html') {
-      res.writeHead(200, { 'Content-Type': 'text/html' });
-      fs.createReadStream(path.join(__dirname, 'index.html')).pipe(res);
-    } else if (req.url.startsWith('/run') || req.url.startsWith('/health') || req.url.startsWith('/metrics')) {
-      const opts = { hostname: new URL(GATEWAY).hostname, port: new URL(GATEWAY).port,
-        path: req.url, method: req.method, headers: req.headers };
-      const proxy = http.request(opts, (pRes) => {
-        res.writeHead(pRes.statusCode, pRes.headers);
-        pRes.pipe(res);
-      });
-      req.pipe(proxy);
-      proxy.on('error', () => { res.writeHead(502); res.end('Gateway unreachable'); });
-    } else { res.writeHead(404); res.end('Not found'); }
-  });
-  // WebSocket proxy (ws://localhost:3000/ws -> ws://GATEWAY/ws)
-  server.on('upgrade', (req, socket, head) => {
-    const net = require('net');
-    const u = new URL(GATEWAY);
-    const upstream = net.connect(u.port || 8080, u.hostname, () => {
-      upstream.write(`GET /ws HTTP/1.1\r\nHost: ${u.host}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n` +
-        `Sec-WebSocket-Key: ${req.headers['sec-websocket-key']}\r\nSec-WebSocket-Version: 13\r\n\r\n`);
-      upstream.pipe(socket); socket.pipe(upstream);
-    });
-    upstream.on('error', () => socket.destroy());
-  });
-  server.listen(PORT, () => console.log(`NCore Dashboard on http://localhost:${PORT}`));
--->
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>NCore Genesis — Mission Control</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NCore Genesis v5.2 — Mission Control</title>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <style>
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-:root{
-  --bg:#0d1117;--bg2:#161b22;--bg3:#1a1a2e;--border:#21262d;
-  --blue:#58a6ff;--green:#3fb950;--red:#f85149;--yellow:#e3b341;--purple:#bc8cff;
-  --text:#c9d1d9;--text2:#8b949e;--text3:#484f58;
-  --term-bg:#161b22;--term-text:#39d353;
-  --radius:8px;--panel-pad:12px;
+/* ═══════════════════════════════════════════════════════════════
+   NCore Genesis v5.2 — Manus-style Agent Dashboard
+   Premium dark theme with glassmorphism and smooth animations
+   ═══════════════════════════════════════════════════════════════ */
+
+/* --- Reset & Base --- */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg-deep: #0a0f1a;
+  --bg-primary: #0f172a;
+  --bg-surface: #1e293b;
+  --bg-surface-2: #283548;
+  --bg-elevated: rgba(30, 41, 59, 0.7);
+  --bg-glass: rgba(15, 23, 42, 0.75);
+  --border-subtle: rgba(148, 163, 184, 0.08);
+  --border-default: rgba(148, 163, 184, 0.12);
+  --border-active: rgba(6, 182, 212, 0.3);
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-tertiary: #64748b;
+  --text-faint: #475569;
+  --cyan: #06b6d4;
+  --cyan-dim: rgba(6, 182, 212, 0.15);
+  --cyan-glow: rgba(6, 182, 212, 0.25);
+  --green: #22c55e;
+  --green-dim: rgba(34, 197, 94, 0.12);
+  --red: #ef4444;
+  --red-dim: rgba(239, 68, 68, 0.12);
+  --amber: #f59e0b;
+  --amber-dim: rgba(245, 158, 11, 0.12);
+  --purple: #a78bfa;
+  --purple-dim: rgba(167, 139, 250, 0.12);
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'SF Mono', 'Cascadia Code', monospace;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+  --transition-fast: 150ms cubic-bezier(0.16, 1, 0.3, 1);
+  --transition-smooth: 300ms cubic-bezier(0.16, 1, 0.3, 1);
+  --transition-spring: 500ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  --shadow-glow: 0 0 20px rgba(6, 182, 212, 0.08);
+  --shadow-card: 0 4px 24px rgba(0, 0, 0, 0.2), 0 1px 2px rgba(0, 0, 0, 0.15);
+  --sidebar-width: 380px;
 }
-html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
-  font-size:14px;color:var(--text);background:var(--bg);overflow:hidden}
-button,input,select,textarea{font:inherit;color:inherit;background:transparent;border:none;outline:none}
-button{cursor:pointer}
-::-webkit-scrollbar{width:6px}
-::-webkit-scrollbar-track{background:transparent}
-::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
 
-/* === LAYOUT === */
-.app{display:flex;flex-direction:column;height:100vh}
-.main{display:flex;flex:1;overflow:hidden}
-#left-panel{width:250px;min-width:250px;background:var(--bg3);border-right:1px solid var(--border);
-  display:flex;flex-direction:column;overflow-y:auto;transition:margin-left .25s}
-#left-panel.collapsed{margin-left:-250px}
-#center-panel{flex:1;display:flex;flex-direction:column;min-width:0}
-#right-panel{width:350px;min-width:350px;border-left:1px solid var(--border);
-  display:flex;flex-direction:column;overflow:hidden}
-#bottom-bar{height:40px;background:var(--bg2);border-top:1px solid var(--border);
-  display:flex;align-items:center;padding:0 16px;gap:20px;font-size:12px;color:var(--text2);flex-shrink:0}
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap');
 
-/* === LEFT PANEL === */
-.lp-header{padding:16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px}
-.lp-header h2{font-size:15px;font-weight:600;color:var(--text)}
-.lp-logo{width:20px;height:20px;background:var(--blue);border-radius:4px;display:flex;align-items:center;
-  justify-content:center;font-weight:700;font-size:11px;color:#fff}
-.lp-nav{padding:8px 0}
-.lp-nav a{display:flex;align-items:center;gap:10px;padding:8px 16px;color:var(--text2);
-  text-decoration:none;font-size:13px;transition:background .15s,color .15s;cursor:pointer}
-.lp-nav a:hover,.lp-nav a.active{background:rgba(88,166,255,.1);color:var(--text)}
-.lp-nav a .icon{width:16px;text-align:center;font-size:14px}
-.lp-section{padding:12px 16px}
-.lp-section h3{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:8px}
-.status-row{display:flex;align-items:center;gap:8px;padding:4px 0;font-size:13px;color:var(--text2)}
-.dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
-.dot.up{background:var(--green);box-shadow:0 0 6px rgba(63,185,80,.4)}
-.dot.down{background:var(--red);box-shadow:0 0 6px rgba(248,81,73,.4)}
-.dot.unknown{background:var(--text3)}
-.session-list{list-style:none;padding:0}
-.session-item{padding:8px 16px;font-size:12px;color:var(--text2);cursor:pointer;
-  border-bottom:1px solid rgba(255,255,255,.04);transition:background .15s}
-.session-item:hover{background:rgba(255,255,255,.04)}
-.session-item .ts{color:var(--text3);font-size:11px}
-.session-item.active{background:rgba(88,166,255,.08);border-left:2px solid var(--blue)}
-
-/* === CENTER PANEL (Chat Feed) === */
-.chat-feed{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px}
-.msg{max-width:90%;padding:10px 14px;border-radius:var(--radius);font-size:13px;line-height:1.5;
-  position:relative;word-wrap:break-word}
-.msg .meta{display:flex;align-items:center;gap:8px;margin-bottom:4px;font-size:11px;color:var(--text2)}
-.msg .meta .model-badge{padding:1px 6px;border-radius:10px;font-size:10px;font-weight:600}
-.msg .meta .cost-badge{color:var(--green);font-weight:600}
-.msg-user{background:#1c2333;border:1px solid var(--border);align-self:flex-end;border-radius:var(--radius) var(--radius) 4px var(--radius)}
-.msg-agent{background:var(--bg2);border:1px solid var(--border);align-self:flex-start;border-radius:var(--radius) var(--radius) var(--radius) 4px}
-.msg-system{background:rgba(88,166,255,.08);border:1px solid rgba(88,166,255,.2);align-self:center;
-  text-align:center;font-size:12px;color:var(--blue)}
-.msg-tool{background:rgba(188,140,255,.06);border:1px solid rgba(188,140,255,.15);align-self:flex-start;width:90%}
-.msg-tool .tool-header{display:flex;align-items:center;gap:6px;font-weight:600;color:var(--purple);
-  font-size:12px;cursor:pointer}
-.msg-tool .tool-body{margin-top:6px;padding:8px;background:var(--bg);border-radius:4px;
-  font-family:'SF Mono',SFMono-Regular,Consolas,monospace;font-size:12px;max-height:200px;
-  overflow-y:auto;display:none;white-space:pre-wrap}
-.msg-tool .tool-body.open{display:block}
-.thinking-toggle{cursor:pointer;color:var(--text3);font-size:11px;user-select:none}
-.thinking-toggle:hover{color:var(--text2)}
-.thinking-content{margin-top:6px;padding:8px;background:rgba(255,255,255,.02);border-radius:4px;
-  font-size:12px;color:var(--text2);display:none;white-space:pre-wrap}
-.thinking-content.open{display:block}
-.copy-btn{position:absolute;top:6px;right:6px;padding:2px 6px;font-size:10px;background:var(--border);
-  border-radius:4px;color:var(--text2);opacity:0;transition:opacity .15s}
-.msg:hover .copy-btn{opacity:1}
-.copy-btn:hover{background:var(--blue);color:#fff}
-
-/* Chat input */
-.chat-input-area{padding:12px 16px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:flex-end}
-.chat-input-wrap{flex:1;display:flex;flex-direction:column;background:var(--bg2);
-  border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
-#chat-input{padding:10px 12px;resize:none;min-height:42px;max-height:150px;line-height:1.4;
-  background:transparent;color:var(--text);font-size:13px}
-.chat-input-footer{display:flex;align-items:center;justify-content:space-between;padding:4px 8px;
-  border-top:1px solid var(--border)}
-#model-select{background:var(--bg);padding:2px 8px;border-radius:4px;font-size:11px;
-  color:var(--text2);border:1px solid var(--border);cursor:pointer}
-#model-select option{background:var(--bg)}
-#send-btn{padding:6px 16px;background:var(--blue);color:#fff;border-radius:6px;font-size:12px;
-  font-weight:600;transition:opacity .15s}
-#send-btn:hover{opacity:.85}
-#send-btn:disabled{opacity:.4;cursor:not-allowed}
-.input-hint{font-size:10px;color:var(--text3)}
-
-/* === RIGHT PANEL === */
-.rp-section{flex:1;display:flex;flex-direction:column;overflow:hidden}
-.rp-section+.rp-section{border-top:1px solid var(--border)}
-.rp-header{padding:8px 12px;font-size:12px;font-weight:600;color:var(--text2);
-  border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
-.rp-header .dot{width:6px;height:6px}
-/* #terminal styles are now inline on the element for dual-view support */
-.term-cmd{color:var(--blue)}
-.term-err{color:var(--red)}
-.term-info{color:var(--text2)}
-.metrics-grid{flex:1;overflow-y:auto;padding:var(--panel-pad);display:flex;flex-direction:column;gap:10px}
-.metric-cards{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.metric-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:10px}
-.metric-card .label{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);margin-bottom:4px}
-.metric-card .value{font-size:22px;font-weight:700;color:var(--text)}
-.metric-card .value .unit{font-size:12px;font-weight:400;color:var(--text2)}
-
-/* GPU bars */
-.gpu-section h4{font-size:11px;color:var(--text2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px}
-.gpu-bar-wrap{margin-bottom:6px}
-.gpu-bar-label{display:flex;justify-content:space-between;font-size:11px;color:var(--text2);margin-bottom:2px}
-.gpu-bar{height:14px;background:var(--bg);border-radius:3px;overflow:hidden}
-.gpu-bar-fill{height:100%;border-radius:3px;transition:width .5s;background:linear-gradient(90deg,var(--green),var(--blue))}
-
-/* Pie chart (CSS-only) */
-.pie-section h4{font-size:11px;color:var(--text2);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px}
-.pie-wrap{display:flex;align-items:center;gap:16px}
-.pie{width:80px;height:80px;border-radius:50%;position:relative}
-.pie-legend{font-size:11px;color:var(--text2);line-height:1.8}
-.pie-legend span{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:4px;vertical-align:middle}
-
-/* === BOTTOM BAR === */
-.bb-item{display:flex;align-items:center;gap:5px;white-space:nowrap}
-.bb-item .dot{width:6px;height:6px}
-.bb-sep{width:1px;height:20px;background:var(--border)}
-
-/* === TOASTS === */
-.toast-container{position:fixed;top:16px;right:16px;z-index:9999;display:flex;flex-direction:column;gap:8px}
-.toast{padding:10px 16px;border-radius:var(--radius);font-size:12px;color:#fff;
-  box-shadow:0 4px 12px rgba(0,0,0,.4);animation:toastIn .3s ease,toastOut .3s ease 3.7s forwards;max-width:320px}
-.toast.success{background:#1a7f37}
-.toast.error{background:#b62324}
-.toast.info{background:#1158c7}
-@keyframes toastIn{from{opacity:0;transform:translateX(40px)}to{opacity:1;transform:translateX(0)}}
-@keyframes toastOut{from{opacity:1}to{opacity:0;transform:translateY(-10px)}}
-
-/* === TOGGLE BUTTONS === */
-.toggle-btn{padding:2px 8px;font-size:11px;color:var(--text3);border:1px solid var(--border);
-  border-radius:4px;cursor:pointer;transition:all .15s}
-.toggle-btn:hover{color:var(--text2);border-color:var(--text3)}
-.toggle-btn.on{color:var(--blue);border-color:var(--blue)}
-#sidebar-toggle{position:fixed;top:8px;left:8px;z-index:100;background:var(--bg2);
-  padding:4px 8px;border-radius:4px;border:1px solid var(--border);color:var(--text2);
-  font-size:14px;display:none;cursor:pointer}
-
-/* === INVESTIGATION TRACE === */
-.trace-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:8px;overflow:hidden;transition:all .2s}
-.trace-card.active{border-color:var(--blue);box-shadow:0 0 12px rgba(88,166,255,.15)}
-.trace-card.success{border-color:var(--green)}
-.trace-card.error{border-color:var(--red)}
-.trace-header{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;cursor:pointer;gap:8px}
-.trace-header:hover{background:rgba(255,255,255,.02)}
-.trace-icon{width:24px;height:24px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0}
-.trace-icon.running{background:rgba(88,166,255,.15);color:var(--blue);animation:pulse 1.5s infinite}
-.trace-icon.done{background:rgba(63,185,80,.15);color:var(--green)}
-.trace-icon.fail{background:rgba(248,81,73,.15);color:var(--red)}
-.trace-tool-name{font-size:13px;font-weight:600;color:var(--text);flex:1}
-.trace-time{font-size:11px;color:var(--text3);font-family:monospace}
-.trace-status{font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px}
-.trace-status.running{background:rgba(88,166,255,.12);color:var(--blue)}
-.trace-status.success{background:rgba(63,185,80,.12);color:var(--green)}
-.trace-status.error{background:rgba(248,81,73,.12);color:var(--red)}
-.trace-body{max-height:0;overflow:hidden;transition:max-height .3s ease;background:var(--bg);border-top:1px solid transparent}
-.trace-card.expanded .trace-body{max-height:400px;overflow-y:auto;border-top-color:var(--border)}
-.trace-stdout{padding:8px 12px;font-family:'SF Mono',SFMono-Regular,Consolas,monospace;font-size:11px;color:var(--term-text);white-space:pre-wrap;line-height:1.5}
-.trace-stdout .highlight{color:var(--yellow);font-weight:600}
-.trace-stdout .found{color:var(--green)}
-.trace-stdout .notfound{color:var(--text3)}
-.trace-summary{padding:8px 12px;font-size:12px;color:var(--text2);border-top:1px solid var(--border);display:flex;gap:12px}
-.trace-summary .count{font-weight:600;color:var(--text)}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
-
-/* === ENHANCED MESSAGE STYLES === */
-.msg-investigation{background:linear-gradient(135deg,rgba(88,166,255,.06),rgba(188,140,255,.06));border:1px solid rgba(88,166,255,.2);align-self:flex-start;width:95%}
-.msg-investigation .inv-header{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-weight:600;color:var(--blue)}
-.msg-investigation .inv-target{font-size:14px;color:var(--text);font-weight:600}
-.msg-investigation .inv-tools{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
-.msg-investigation .inv-tool-badge{padding:2px 8px;background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:4px;font-size:11px;color:var(--text2)}
-
-/* === RESULTS TABLE === */
-.result-table{width:100%;border-collapse:collapse;margin:8px 0;font-size:12px}
-.result-table th{text-align:left;padding:6px 8px;background:var(--bg);color:var(--text2);font-size:11px;text-transform:uppercase;letter-spacing:.3px;border-bottom:1px solid var(--border)}
-.result-table td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.04);color:var(--text)}
-.result-table tr:hover td{background:rgba(255,255,255,.02)}
-
-/* === PROGRESS BAR (for investigation) === */
-.inv-progress{height:3px;background:var(--border);border-radius:2px;margin:8px 0;overflow:hidden}
-.inv-progress-fill{height:100%;background:linear-gradient(90deg,var(--blue),var(--purple));border-radius:2px;transition:width .5s ease;width:0%}
-
-/* === RESPONSIVE === */
-@media(max-width:1100px){
-  #right-panel{width:280px;min-width:280px}
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
-@media(max-width:900px){
-  #left-panel{position:fixed;z-index:50;height:100%;margin-left:-250px}
-  #left-panel.show{margin-left:0}
-  #sidebar-toggle{display:block}
-  #right-panel{display:none}
-  .main{flex-direction:column}
+
+body {
+  min-height: 100dvh;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--text-primary);
+  background: var(--bg-deep);
+  overflow: hidden;
+  line-height: 1.5;
 }
-@media(max-width:600px){
-  .metric-cards{grid-template-columns:1fr}
+
+/* Subtle grid background pattern */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(6, 182, 212, 0.06), transparent),
+    radial-gradient(circle at 50% 50%, transparent 0%, var(--bg-deep) 100%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* --- App Shell --- */
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  position: relative;
+  z-index: 1;
+}
+
+/* ═══════════ HEADER ═══════════ */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  height: 56px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-glass);
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  flex-shrink: 0;
+  z-index: 100;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.logo-mark {
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.logo-mark svg {
+  width: 28px;
+  height: 28px;
+}
+
+.header-title {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.header-version {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  background: var(--bg-surface);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+}
+
+.header-center {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.status-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.status-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  transition: all var(--transition-smooth);
+}
+
+.status-badge.connected {
+  color: var(--green);
+  border-color: rgba(34, 197, 94, 0.2);
+  background: var(--green-dim);
+}
+
+.status-badge.disconnected {
+  color: var(--red);
+  border-color: rgba(239, 68, 68, 0.2);
+  background: var(--red-dim);
+}
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+.status-dot.pulse {
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 currentColor; }
+  50% { opacity: 0.6; box-shadow: 0 0 0 4px transparent; }
+}
+
+.ready-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--green);
+}
+
+.ready-indicator .status-dot {
+  background: var(--green);
+  box-shadow: 0 0 8px rgba(34, 197, 94, 0.4);
+}
+
+.trace-toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  padding: 5px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.trace-toggle-btn:hover {
+  background: var(--bg-surface-2);
+  color: var(--text-primary);
+  border-color: var(--border-default);
+}
+
+.trace-toggle-btn.active {
+  color: var(--cyan);
+  border-color: var(--border-active);
+  background: var(--cyan-dim);
+}
+
+.trace-toggle-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* ═══════════ MAIN LAYOUT ═══════════ */
+.main-layout {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+
+/* ═══════════ CHAT PANEL ═══════════ */
+.chat-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  transition: margin-right var(--transition-smooth);
+}
+
+.chat-panel.sidebar-open {
+  margin-right: 0;
+}
+
+/* --- Chat Messages --- */
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 24px 0;
+  scroll-behavior: smooth;
+}
+
+.chat-messages::-webkit-scrollbar { width: 5px; }
+.chat-messages::-webkit-scrollbar-track { background: transparent; }
+.chat-messages::-webkit-scrollbar-thumb {
+  background: var(--bg-surface-2);
+  border-radius: 10px;
+}
+.chat-messages::-webkit-scrollbar-thumb:hover { background: var(--text-faint); }
+
+.messages-container {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 0 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Welcome state */
+.welcome-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  padding: 48px 24px;
+  text-align: center;
+  opacity: 1;
+  transition: opacity var(--transition-smooth);
+}
+
+.welcome-state.hidden {
+  display: none;
+}
+
+.welcome-icon {
+  width: 64px;
+  height: 64px;
+  margin-bottom: 24px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, var(--cyan-dim), var(--purple-dim));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-subtle);
+}
+
+.welcome-icon svg {
+  width: 32px;
+  height: 32px;
+  color: var(--cyan);
+}
+
+.welcome-title {
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+  letter-spacing: -0.02em;
+}
+
+.welcome-subtitle {
+  font-size: 14px;
+  color: var(--text-tertiary);
+  max-width: 400px;
+  line-height: 1.6;
+}
+
+.welcome-hints {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 28px;
+  justify-content: center;
+}
+
+.hint-chip {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: 8px 16px;
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.hint-chip:hover {
+  border-color: var(--border-active);
+  background: var(--cyan-dim);
+  color: var(--cyan);
+}
+
+/* Message Bubbles */
+.message-row {
+  display: flex;
+  gap: 12px;
+  max-width: 100%;
+  animation: msgSlideIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes msgSlideIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.message-row.user {
+  justify-content: flex-end;
+}
+
+.message-row.system {
+  justify-content: flex-start;
+}
+
+.message-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: 600;
+  margin-top: 4px;
+}
+
+.message-row.system .message-avatar {
+  background: linear-gradient(135deg, var(--cyan-dim), rgba(6, 182, 212, 0.05));
+  color: var(--cyan);
+  border: 1px solid rgba(6, 182, 212, 0.15);
+}
+
+.message-row.user .message-avatar {
+  background: var(--bg-surface-2);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+  order: 2;
+}
+
+.message-bubble {
+  max-width: 680px;
+  padding: 12px 16px;
+  border-radius: var(--radius-lg);
+  line-height: 1.65;
+  font-size: 14px;
+  position: relative;
+}
+
+.message-row.user .message-bubble {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  border-bottom-right-radius: var(--radius-sm);
+}
+
+.message-row.system .message-bubble {
+  background: var(--bg-elevated);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  border-bottom-left-radius: var(--radius-sm);
+}
+
+/* Markdown rendered content */
+.message-bubble h1, .message-bubble h2, .message-bubble h3, .message-bubble h4 {
+  margin-top: 16px;
+  margin-bottom: 8px;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+.message-bubble h1 { font-size: 18px; }
+.message-bubble h2 { font-size: 16px; }
+.message-bubble h3 { font-size: 15px; }
+.message-bubble h1:first-child, .message-bubble h2:first-child, .message-bubble h3:first-child { margin-top: 0; }
+
+.message-bubble p { margin-bottom: 8px; }
+.message-bubble p:last-child { margin-bottom: 0; }
+
+.message-bubble code {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: var(--cyan);
+  border: 1px solid var(--border-subtle);
+}
+
+.message-bubble pre {
+  margin: 10px 0;
+  padding: 14px 16px;
+  background: rgba(0, 0, 0, 0.35);
+  border-radius: var(--radius-md);
+  overflow-x: auto;
+  border: 1px solid var(--border-subtle);
+}
+
+.message-bubble pre code {
+  background: none;
+  padding: 0;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+
+.message-bubble ul, .message-bubble ol {
+  margin: 8px 0;
+  padding-left: 20px;
+}
+
+.message-bubble li {
+  margin-bottom: 4px;
+  color: var(--text-secondary);
+}
+
+.message-bubble strong { color: var(--text-primary); font-weight: 600; }
+.message-bubble a { color: var(--cyan); text-decoration: none; }
+.message-bubble a:hover { text-decoration: underline; }
+
+.message-bubble blockquote {
+  border-left: 3px solid var(--cyan);
+  padding-left: 12px;
+  margin: 8px 0;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.message-bubble table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 10px 0;
+  font-size: 13px;
+}
+
+.message-bubble th, .message-bubble td {
+  padding: 8px 12px;
+  border: 1px solid var(--border-subtle);
+  text-align: left;
+}
+
+.message-bubble th {
+  background: rgba(0,0,0,0.2);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.message-meta {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-faint);
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.message-row.user .message-meta { justify-content: flex-end; }
+
+/* Specialist results collapsible */
+.specialist-results {
+  margin-top: 12px;
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 10px;
+}
+
+.specialist-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  padding: 4px 0;
+  transition: color var(--transition-fast);
+  background: none;
+  border: none;
+}
+
+.specialist-toggle:hover { color: var(--cyan); }
+
+.specialist-toggle svg {
+  width: 12px;
+  height: 12px;
+  transition: transform var(--transition-fast);
+}
+
+.specialist-toggle.open svg {
+  transform: rotate(90deg);
+}
+
+.specialist-detail {
+  display: none;
+  margin-top: 8px;
+}
+
+.specialist-detail.open { display: block; }
+
+.specialist-card-inline {
+  padding: 10px 12px;
+  background: rgba(0,0,0,0.2);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  margin-bottom: 6px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.specialist-card-inline .spec-name {
+  color: var(--cyan);
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.specialist-card-inline .spec-content {
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  font-size: 11.5px;
+  line-height: 1.6;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+/* Typing indicator */
+.typing-indicator {
+  display: none;
+  padding: 8px 0;
+}
+
+.typing-indicator.active { display: flex; }
+
+.typing-indicator .message-bubble {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 14px 18px;
+}
+
+.typing-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-tertiary);
+  animation: typingBounce 1.4s ease-in-out infinite;
+}
+
+.typing-dot:nth-child(2) { animation-delay: 0.15s; }
+.typing-dot:nth-child(3) { animation-delay: 0.3s; }
+
+@keyframes typingBounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+  30% { transform: translateY(-6px); opacity: 1; }
+}
+
+/* --- Chat Input --- */
+.chat-input-area {
+  padding: 16px 24px 20px;
+  background: linear-gradient(to top, var(--bg-deep) 60%, transparent);
+}
+
+.chat-input-wrapper {
+  max-width: 800px;
+  margin: 0 auto;
+  position: relative;
+}
+
+.chat-input-box {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  padding: 8px 8px 8px 18px;
+  transition: all var(--transition-fast);
+  box-shadow: 0 2px 16px rgba(0,0,0,0.15);
+}
+
+.chat-input-box:focus-within {
+  border-color: var(--cyan);
+  box-shadow: 0 0 0 3px var(--cyan-dim), 0 2px 16px rgba(0,0,0,0.15);
+}
+
+.chat-input-box textarea {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  resize: none;
+  min-height: 24px;
+  max-height: 140px;
+  padding: 6px 0;
+}
+
+.chat-input-box textarea::placeholder {
+  color: var(--text-faint);
+}
+
+.send-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  background: var(--cyan);
+  border: none;
+  color: var(--bg-deep);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all var(--transition-fast);
+}
+
+.send-btn:hover {
+  background: #0cd3ef;
+  transform: scale(1.04);
+}
+
+.send-btn:active {
+  transform: scale(0.96);
+}
+
+.send-btn:disabled {
+  background: var(--bg-surface-2);
+  color: var(--text-faint);
+  cursor: not-allowed;
+  transform: none;
+}
+
+.send-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.input-hint {
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-faint);
+  margin-top: 8px;
+}
+
+.input-hint kbd {
+  font-family: var(--font-mono);
+  padding: 1px 5px;
+  border-radius: 3px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  font-size: 10px;
+}
+
+/* ═══════════ TRACE SIDEBAR ═══════════ */
+.trace-sidebar {
+  width: var(--sidebar-width);
+  height: 100%;
+  border-left: 1px solid var(--border-subtle);
+  background: var(--bg-glass);
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  transform: translateX(100%);
+  transition: transform var(--transition-smooth);
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 50;
+}
+
+.trace-sidebar.open {
+  transform: translateX(0);
+}
+
+.trace-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.trace-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.trace-header-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  background: var(--cyan-dim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--cyan);
+}
+
+.trace-header-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.trace-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+
+.trace-subtitle {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+.trace-close-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  background: none;
+  border: none;
+}
+
+.trace-close-btn:hover {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+.trace-close-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Trace content */
+.trace-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.trace-content::-webkit-scrollbar { width: 4px; }
+.trace-content::-webkit-scrollbar-track { background: transparent; }
+.trace-content::-webkit-scrollbar-thumb { background: var(--bg-surface-2); border-radius: 10px; }
+
+/* Empty trace state */
+.trace-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  padding: 40px 20px;
+  text-align: center;
+}
+
+.trace-empty-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+  color: var(--text-faint);
+}
+
+.trace-empty-icon svg {
+  width: 22px;
+  height: 22px;
+}
+
+.trace-empty-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
+.trace-empty-text {
+  font-size: 12px;
+  color: var(--text-faint);
+  max-width: 220px;
+}
+
+/* Planning phase */
+.trace-planning {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: var(--radius-md);
+  background: var(--cyan-dim);
+  border: 1px solid rgba(6, 182, 212, 0.15);
+  animation: cardSlideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.trace-planning.active {
+  display: flex;
+}
+
+@keyframes cardSlideUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.planning-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(6, 182, 212, 0.2);
+  border-top-color: var(--cyan);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.planning-text {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--cyan);
+}
+
+.planning-dots::after {
+  content: '';
+  animation: dots 1.5s steps(3) infinite;
+}
+
+@keyframes dots {
+  0% { content: ''; }
+  33% { content: '.'; }
+  66% { content: '..'; }
+  100% { content: '...'; }
+}
+
+/* Agent Trace Cards */
+.agent-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  animation: cardSlideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+  transition: border-color var(--transition-smooth);
+}
+
+.agent-card.running {
+  border-color: rgba(6, 182, 212, 0.2);
+}
+
+.agent-card.done {
+  border-color: rgba(34, 197, 94, 0.2);
+}
+
+.agent-card.error {
+  border-color: rgba(239, 68, 68, 0.2);
+}
+
+.agent-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  gap: 10px;
+}
+
+.agent-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.agent-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.agent-card.running .agent-icon {
+  background: var(--cyan-dim);
+  color: var(--cyan);
+  border: 1px solid rgba(6, 182, 212, 0.15);
+}
+
+.agent-card.done .agent-icon {
+  background: var(--green-dim);
+  color: var(--green);
+  border: 1px solid rgba(34, 197, 94, 0.15);
+}
+
+.agent-card.error .agent-icon {
+  background: var(--red-dim);
+  color: var(--red);
+  border: 1px solid rgba(239, 68, 68, 0.15);
+}
+
+.agent-name-group {
+  min-width: 0;
+}
+
+.agent-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: -0.01em;
+}
+
+.agent-type-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-faint);
+  margin-top: 2px;
+}
+
+.agent-type-badge .type-icon {
+  font-size: 10px;
+}
+
+.agent-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.agent-time {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+.agent-status-icon {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.agent-card.running .agent-status-icon {
+  color: var(--cyan);
+}
+
+.agent-card.running .agent-status-icon .status-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(6, 182, 212, 0.15);
+  border-top-color: var(--cyan);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.agent-card.done .agent-status-icon {
+  background: var(--green-dim);
+  color: var(--green);
+}
+
+.agent-card.done .agent-status-icon svg {
+  width: 12px;
+  height: 12px;
+}
+
+.agent-card.error .agent-status-icon {
+  background: var(--red-dim);
+  color: var(--red);
+}
+
+.agent-card.error .agent-status-icon svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* Agent progress bar */
+.agent-progress {
+  height: 2px;
+  background: rgba(0,0,0,0.2);
+  overflow: hidden;
+}
+
+.agent-progress-bar {
+  height: 100%;
+  border-radius: 1px;
+  transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.agent-card.running .agent-progress-bar {
+  background: linear-gradient(90deg, var(--cyan), rgba(6, 182, 212, 0.5));
+  animation: progressPulse 2s ease-in-out infinite;
+}
+
+.agent-card.done .agent-progress-bar {
+  background: var(--green);
+  width: 100% !important;
+}
+
+.agent-card.error .agent-progress-bar {
+  background: var(--red);
+}
+
+@keyframes progressPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+/* Trace summary footer */
+.trace-summary {
+  display: none;
+  padding: 14px 18px;
+  border-top: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.trace-summary.active { display: block; }
+
+.trace-summary-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.trace-summary-label {
+  color: var(--text-faint);
+}
+
+.trace-summary-value {
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.trace-summary-value.success { color: var(--green); }
+
+/* ═══════════ RESPONSIVE ═══════════ */
+@media (max-width: 768px) {
+  .header { padding: 0 14px; height: 50px; }
+  .header-version, .header-center { display: none; }
+  .trace-sidebar { width: 100%; }
+  .chat-input-area { padding: 12px 14px 16px; }
+  .messages-container { padding: 0 14px; }
+  .welcome-hints { flex-direction: column; align-items: center; }
+  .hint-chip { width: 100%; max-width: 280px; text-align: center; }
+
+  .status-group { gap: 8px; }
+  .status-badge { padding: 3px 8px; font-size: 10px; }
+}
+
+@media (max-width: 480px) {
+  .status-badge span:not(.status-dot) { display: none; }
+  .status-badge { padding: 4px; min-width: 24px; justify-content: center; }
+  .trace-toggle-btn span { display: none; }
+}
+
+/* ═══════════ ANIMATIONS ═══════════ */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Selection */
+::selection {
+  background: rgba(6, 182, 212, 0.25);
+  color: var(--text-primary);
 }
 </style>
 </head>
 <body>
 
-<button id="sidebar-toggle" onclick="document.getElementById('left-panel').classList.toggle('show')">&#9776;</button>
-
-<div class="toast-container" id="toasts"></div>
-
 <div class="app">
-<div class="main">
+  <!-- ═══════ HEADER ═══════ -->
+  <header class="header">
+    <div class="header-left">
+      <div class="logo-mark">
+        <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect x="2" y="2" width="28" height="28" rx="8" fill="url(#logoGrad)" stroke="rgba(6,182,212,0.3)" stroke-width="1"/>
+          <path d="M10 16L14 10L18 16L22 10" stroke="#06b6d4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M10 22L14 16L18 22L22 16" stroke="rgba(6,182,212,0.4)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <defs>
+            <linearGradient id="logoGrad" x1="2" y1="2" x2="30" y2="30">
+              <stop stop-color="#0f172a"/>
+              <stop offset="1" stop-color="#1e293b"/>
+            </linearGradient>
+          </defs>
+        </svg>
+      </div>
+      <span class="header-title">NCore Genesis</span>
+      <span class="header-version">v5.2</span>
+    </div>
 
-<!-- LEFT PANEL -->
-<div id="left-panel">
-  <div class="lp-header">
-    <div class="lp-logo">N</div>
-    <h2>NCore Genesis</h2>
-  </div>
-  <nav class="lp-nav">
-    <a class="active" data-view="tasks"><span class="icon">&#9654;</span> Tasks</a>
-    <a data-view="gpu"><span class="icon">&#9881;</span> GPU Status</a>
-    <a data-view="cost"><span class="icon">$</span> Cost Tracker</a>
-    <a data-view="settings"><span class="icon">&#9881;</span> Settings</a>
-  </nav>
-  <div class="lp-section">
-    <h3>System Status</h3>
-    <div class="status-row"><span class="dot unknown" id="st-ollama"></span>Ollama</div>
-    <div class="status-row"><span class="dot unknown" id="st-redis"></span>Redis</div>
-    <div class="status-row"><span class="dot unknown" id="st-gateway"></span>Gateway</div>
-    <div class="status-row"><span class="dot unknown" id="st-openclaw"></span>Agent Zero</div>
-  </div>
-  <div class="lp-section">
-    <h3>Session History</h3>
-    <ul class="session-list" id="session-list"></ul>
-  </div>
-</div>
-
-<!-- CENTER PANEL -->
-<div id="center-panel">
-  <div class="chat-feed" id="chat-feed"></div>
-  <div class="chat-input-area">
-    <div class="chat-input-wrap">
-      <textarea id="chat-input" rows="1" placeholder="Describe your task..."></textarea>
-      <div class="chat-input-footer">
-        <div style="display:flex;align-items:center;gap:8px">
-          <select id="model-select">
-            <option value="local">Local (Dark Champion)</option>
-            <option value="free">Free (Qwen3 Coder)</option>
-            <option value="fast" selected>Fast (GPT-OSS 20B)</option>
-            <option value="worker">Worker (DeepSeek R1)</option>
-            <option value="opus">Opus (Claude 4.6)</option>
-          </select>
-          <span class="input-hint">Enter to send &middot; Ctrl+Enter for newline</span>
+    <div class="header-right">
+      <div class="status-group">
+        <div id="wsStatus" class="status-badge disconnected">
+          <span class="status-dot"></span>
+          <span>Disconnected</span>
         </div>
-        <button id="send-btn" onclick="sendMessage()">Send</button>
+        <div id="readyStatus" class="ready-indicator" style="display: none;">
+          <span class="status-dot pulse"></span>
+          <span>Ready</span>
+        </div>
       </div>
+      <button id="traceToggle" class="trace-toggle-btn" onclick="toggleTrace()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+        </svg>
+        <span>Trace</span>
+      </button>
     </div>
-  </div>
-</div>
+  </header>
 
-<!-- RIGHT PANEL -->
-<div id="right-panel">
-  <div class="rp-section" id="trace-section">
-    <div class="rp-header">
-      <span id="trace-title">Live Terminal</span>
-      <span style="display:flex;gap:6px;align-items:center">
-        <button class="toggle-btn" id="trace-mode-btn" onclick="toggleTraceMode()" title="Switch view">Terminal</button>
-        <button class="toggle-btn" id="scroll-lock-btn" onclick="toggleScrollLock()" title="Auto-scroll">&#8595; Auto</button>
-        <span class="dot up" id="term-status"></span>
-      </span>
-    </div>
-    <!-- Terminal view (default) -->
-    <div id="terminal-view" style="flex:1;overflow-y:auto">
-      <div id="terminal" style="padding:10px;background:var(--term-bg);font-family:'SF Mono',SFMono-Regular,Consolas,monospace;font-size:12px;color:var(--term-text);line-height:1.6;white-space:pre-wrap;word-break:break-all;min-height:100%">
-        <span class="term-info">$ Waiting for commands...</span>
+  <!-- ═══════ MAIN ═══════ -->
+  <div class="main-layout">
+    <!-- Chat Panel -->
+    <div id="chatPanel" class="chat-panel">
+      <!-- Welcome -->
+      <div id="welcomeState" class="welcome-state">
+        <div class="welcome-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+            <path d="M2 17l10 5 10-5"/>
+            <path d="M2 12l10 5 10-5"/>
+          </svg>
+        </div>
+        <h1 class="welcome-title">NCore Genesis</h1>
+        <p class="welcome-subtitle">Multi-agent orchestration engine. Describe a task and specialists will be automatically assigned and executed.</p>
+        <div class="welcome-hints">
+          <button class="hint-chip" onclick="useHint(this)">"Analyze the top 10 trending GitHub repos"</button>
+          <button class="hint-chip" onclick="useHint(this)">"Write a market analysis of the EV industry"</button>
+          <button class="hint-chip" onclick="useHint(this)">"Build a REST API spec for a todo app"</button>
+        </div>
       </div>
-    </div>
-    <!-- Investigation trace view (activates during investigations) -->
-    <div id="trace-view" style="flex:1;overflow-y:auto;padding:8px;display:none">
-      <div id="trace-cards"></div>
-    </div>
-  </div>
-  <div class="rp-section">
-    <div class="rp-header">Metrics</div>
-    <div class="metrics-grid">
-      <div class="metric-cards">
-        <div class="metric-card"><div class="label">Tasks Completed</div><div class="value" id="m-tasks">0</div></div>
-        <div class="metric-card"><div class="label">Quality Score</div><div class="value" id="m-quality">—</div></div>
-        <div class="metric-card"><div class="label">Tokens Used</div><div class="value" id="m-tokens">0</div></div>
-        <div class="metric-card"><div class="label">Session Cost</div><div class="value" id="m-cost">$0.00</div></div>
+
+      <!-- Messages -->
+      <div id="chatMessages" class="chat-messages" style="display:none;">
+        <div id="messagesContainer" class="messages-container"></div>
       </div>
-      <div class="gpu-section">
-        <h4>GPU Utilization</h4>
-        <div id="gpu-bars"><div style="font-size:11px;color:var(--text3)">No active GPUs</div></div>
-      </div>
-      <div class="pie-section">
-        <h4>Model Routing</h4>
-        <div class="pie-wrap">
-          <div class="pie" id="pie-chart"></div>
-          <div class="pie-legend" id="pie-legend"></div>
+
+      <!-- Input -->
+      <div class="chat-input-area">
+        <div class="chat-input-wrapper">
+          <div class="chat-input-box">
+            <textarea
+              id="chatInput"
+              rows="1"
+              placeholder="Describe your task..."
+              onkeydown="handleInputKey(event)"
+              oninput="autoResize(this)"
+            ></textarea>
+            <button id="sendBtn" class="send-btn" onclick="sendMessage()" disabled>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="12" y1="19" x2="12" y2="5"/>
+                <polyline points="5 12 12 5 19 12"/>
+              </svg>
+            </button>
+          </div>
+          <div class="input-hint">
+            <kbd>Enter</kbd> to send · <kbd>Shift+Enter</kbd> for new line
+          </div>
         </div>
       </div>
     </div>
+
+    <!-- ═══════ TRACE SIDEBAR ═══════ -->
+    <aside id="traceSidebar" class="trace-sidebar">
+      <div class="trace-header">
+        <div class="trace-header-left">
+          <div class="trace-header-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+            </svg>
+          </div>
+          <div>
+            <div class="trace-title">Agent Trace</div>
+            <div class="trace-subtitle" id="traceSubtitle">Waiting for task</div>
+          </div>
+        </div>
+        <button class="trace-close-btn" onclick="toggleTrace()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"/>
+            <line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </div>
+
+      <div class="trace-content" id="traceContent">
+        <!-- Planning indicator -->
+        <div id="tracePlanning" class="trace-planning">
+          <div class="planning-spinner"></div>
+          <span class="planning-text">Planning<span class="planning-dots"></span></span>
+        </div>
+
+        <!-- Agent cards will be injected here -->
+        <div id="agentCards"></div>
+
+        <!-- Empty state -->
+        <div id="traceEmpty" class="trace-empty">
+          <div class="trace-empty-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <polyline points="12 6 12 12 16 14"/>
+            </svg>
+          </div>
+          <div class="trace-empty-title">No active traces</div>
+          <div class="trace-empty-text">Agent execution traces will appear here when a task is running.</div>
+        </div>
+      </div>
+
+      <div id="traceSummary" class="trace-summary">
+        <div class="trace-summary-row">
+          <span class="trace-summary-label">Total time</span>
+          <span class="trace-summary-value" id="traceTotalTime">—</span>
+        </div>
+        <div class="trace-summary-row" style="margin-top: 6px;">
+          <span class="trace-summary-label">Agents</span>
+          <span class="trace-summary-value" id="traceAgentCount">—</span>
+        </div>
+      </div>
+    </aside>
   </div>
 </div>
-
-</div><!-- .main -->
-
-<!-- BOTTOM BAR -->
-<div id="bottom-bar">
-  <div class="bb-item"><span style="color:var(--text3)">Tokens:</span><span id="bb-tokens-in">0</span>in / <span id="bb-tokens-out">0</span>out</div>
-  <div class="bb-sep"></div>
-  <div class="bb-item"><span style="color:var(--green);font-weight:600" id="bb-cost">$0.00</span> this session</div>
-  <div class="bb-sep"></div>
-  <div class="bb-item"><span class="dot up" id="bb-gpu-dot"></span><span id="bb-gpus">0</span> GPUs <span id="bb-gpu-cost" style="color:var(--text3)"></span></div>
-  <div class="bb-sep"></div>
-  <div class="bb-item">Model: <span id="bb-model" style="color:var(--blue)">Fast (GPT-OSS 20B)</span></div>
-  <div class="bb-sep"></div>
-  <div class="bb-item">Uptime: <span id="bb-uptime">00:00:00</span></div>
-  <div style="flex:1"></div>
-  <div class="bb-item" style="color:var(--text3)">NCore Genesis v7.6</div>
-</div>
-</div><!-- .app -->
 
 <script>
-// Auto-detect API base URL — works whether served from gateway (:8080) or standalone (:3002)
-const API_BASE = (function() {
-    const port = parseInt(location.port);
-    // If served from the gateway (8080), use relative URLs
-    if (port === 8080 || !port) return '';
-    // If served standalone (3002), proxy to gateway
-    return 'http://' + location.hostname + ':8080';
-})();
+// ═══════════════════════════════════════════════════
+// NCore Genesis v5.2 — Dashboard Controller
+// ═══════════════════════════════════════════════════
 
-// ===== STATE =====
-const S = {
-  ws: null, wsOk: false, pollTimer: null,
-  autoScroll: true, scrollLockChat: false,
-  sessions: [], currentSession: null,
-  tokensIn: 0, tokensOut: 0, cost: 0, tasksCompleted: 0,
-  qualityScore: null, gpus: [], routingBreakdown: {},
-  startTime: Date.now(), msgId: 0
-};
+// --- Configuration ---
+const WS_RECONNECT_DELAY = 3000;
+const WS_MAX_RETRIES = 20;
 
-const MODELS = {
-  local:'Local (Dark Champion + Qwen3.5)',free:'Free (Qwen3 Coder 480B)',
-  fast:'Fast (GPT-OSS 20B)',worker:'Worker (DeepSeek V3.2)',opus:'Opus (Claude 4.6)'
-};
-const MODEL_COLORS = {local:'#e3b341',free:'#3fb950',fast:'#58a6ff',worker:'#bc8cff',opus:'#f47067'};
+// Detect host for WebSocket and API
+const loc = window.location;
+const wsProto = loc.protocol === 'https:' ? 'wss:' : 'ws:';
+const httpBase = loc.origin;
+const WS_URL = wsProto + '//' + loc.hostname + ':8080/ws';
+const API_URL = httpBase.replace(/:\d+$/, ':8080');
 
-// ===== UTILS =====
-function $(id){return document.getElementById(id)}
-function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
-function fmtNum(n){return n>=1e6?(n/1e6).toFixed(1)+'M':n>=1e3?(n/1e3).toFixed(1)+'K':String(n)}
-function fmtCost(c){return '$'+c.toFixed(4)}
-function fmtTime(ms){
-  const s=Math.floor(ms/1000),h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sec=s%60;
-  return [h,m,sec].map(v=>String(v).padStart(2,'0')).join(':');
-}
-function ts(){return new Date().toLocaleTimeString('en-US',{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'})}
+// --- State ---
+let ws = null;
+let wsRetries = 0;
+let sidebarOpen = false;
+let isProcessing = false;
+let agentTimers = {};
+let taskStartTime = null;
+let currentAgents = {};
 
-// ===== TOASTS =====
-function toast(msg,type='info'){
-  const el=document.createElement('div');el.className='toast '+type;el.textContent=msg;
-  $('toasts').appendChild(el);setTimeout(()=>el.remove(),4000);
-}
-
-// ===== TERMINAL =====
-function termWrite(text,cls=''){
-  const term=$('terminal');const line=document.createElement('div');
-  if(cls)line.className=cls;
-  line.textContent=text;term.appendChild(line);
-  if(S.autoScroll)term.scrollTop=term.scrollHeight;
-}
-
-function toggleScrollLock(){
-  S.autoScroll=!S.autoScroll;
-  const b=$('scroll-lock-btn');
-  b.classList.toggle('on',S.autoScroll);
-  b.innerHTML=S.autoScroll?'&#8595; Auto':'&#8214; Lock';
-}
-
-// ===== CHAT MESSAGES =====
-function addMsg(type,content,opts={}){
-  const feed=$('chat-feed');
-  const div=document.createElement('div');
-  div.className='msg msg-'+type;
-  div.id='msg-'+S.msgId++;
-  let meta='<div class="meta"><span>'+ts()+'</span>';
-  if(opts.model){
-    const c=MODEL_COLORS[opts.model]||'var(--text3)';
-    meta+='<span class="model-badge" style="background:'+c+'22;color:'+c+';border:1px solid '+c+'44">'+esc(MODELS[opts.model]||opts.model)+'</span>';
-  }
-  if(opts.tokens)meta+='<span>'+fmtNum(opts.tokens)+' tok</span>';
-  if(opts.cost!=null)meta+='<span class="cost-badge">'+fmtCost(opts.cost)+'</span>';
-  meta+='</div>';
-
-  let body='';
-  if(type==='investigation'){
-    // Investigation messages use raw HTML (already sanitized by caller)
-    div.innerHTML=meta+content+'<button class="copy-btn" onclick="copyMsg(this)">Copy</button>';
-    feed.appendChild(div);
-    if(!S.scrollLockChat)feed.scrollTop=feed.scrollHeight;
-    return div;
-  }
-  if(type==='tool'){
-    const toolName=opts.toolName||'tool';
-    const args=opts.args||'';
-    body='<div class="tool-header" onclick="this.nextElementSibling.classList.toggle(\'open\')">&#9654; '+esc(toolName);
-    if(args)body+=' <span style="color:var(--text3);font-weight:400">'+esc(typeof args==='string'?args:JSON.stringify(args))+'</span>';
-    body+='</div><div class="tool-body">'+esc(content)+'</div>';
-  } else if(opts.thinking){
-    body='<div>'+formatContent(content)+'</div>';
-    body+='<div class="thinking-toggle" onclick="this.nextElementSibling.classList.toggle(\'open\')">&#9662; Show thinking</div>';
-    body+='<div class="thinking-content">'+esc(opts.thinking)+'</div>';
-  } else {
-    body='<div>'+formatContent(content)+'</div>';
-  }
-
-  div.innerHTML=meta+body+'<button class="copy-btn" onclick="copyMsg(this)">Copy</button>';
-  feed.appendChild(div);
-  if(!S.scrollLockChat)feed.scrollTop=feed.scrollHeight;
-  return div;
-}
-
-function formatContent(s){
-  // Minimal markdown: code blocks and inline code
-  s=esc(s);
-  s=s.replace(/```(\w*)\n([\s\S]*?)```/g,'<pre style="background:var(--bg);padding:8px;border-radius:4px;overflow-x:auto;margin:6px 0"><code>$2</code></pre>');
-  s=s.replace(/`([^`]+)`/g,'<code style="background:var(--bg);padding:1px 4px;border-radius:3px">$1</code>');
-  s=s.replace(/\n/g,'<br>');
-  return s;
-}
-
-function copyMsg(btn){
-  const msg=btn.parentElement;
-  const text=msg.innerText.replace(/^Copy$/m,'').trim();
-  navigator.clipboard.writeText(text).then(()=>{btn.textContent='Copied!';setTimeout(()=>btn.textContent='Copy',1500)});
-}
-
-// ===== SESSIONS =====
-function newSession(){
-  const id=Date.now();
-  const session={id,name:'Task #'+(S.sessions.length+1),ts:new Date().toISOString(),messages:[]};
-  S.sessions.unshift(session);S.currentSession=session;
-  renderSessions();
-  addMsg('system','New session started');
-  return session;
-}
-function renderSessions(){
-  const ul=$('session-list');ul.innerHTML='';
-  S.sessions.slice(0,20).forEach(s=>{
-    const li=document.createElement('li');
-    li.className='session-item'+(S.currentSession&&S.currentSession.id===s.id?' active':'');
-    li.innerHTML='<div>'+esc(s.name)+'</div><div class="ts">'+new Date(s.ts).toLocaleString()+'</div>';
-    li.onclick=()=>{S.currentSession=s;renderSessions()};
-    ul.appendChild(li);
+// --- Markdown config ---
+if (typeof marked !== 'undefined') {
+  marked.setOptions({
+    breaks: true,
+    gfm: true,
+    headerIds: false,
+    mangle: false
   });
 }
 
-// ===== SEND MESSAGE =====
-async function sendMessage(){
-  const input=$('chat-input');
-  const text=input.value.trim();if(!text)return;
-  const model=$('model-select').value;
-  input.value='';autoResizeInput();
-  addMsg('user',text,{model});
-  $('send-btn').disabled=true;
+// --- DOM refs ---
+const chatInput = document.getElementById('chatInput');
+const sendBtn = document.getElementById('sendBtn');
+const messagesContainer = document.getElementById('messagesContainer');
+const chatMessages = document.getElementById('chatMessages');
+const welcomeState = document.getElementById('welcomeState');
+const wsStatusEl = document.getElementById('wsStatus');
+const readyStatusEl = document.getElementById('readyStatus');
+const traceToggleBtn = document.getElementById('traceToggle');
+const traceSidebar = document.getElementById('traceSidebar');
+const tracePlanning = document.getElementById('tracePlanning');
+const agentCardsEl = document.getElementById('agentCards');
+const traceEmpty = document.getElementById('traceEmpty');
+const traceSummary = document.getElementById('traceSummary');
+const traceSubtitle = document.getElementById('traceSubtitle');
+const traceTotalTime = document.getElementById('traceTotalTime');
+const traceAgentCount = document.getElementById('traceAgentCount');
 
-  termWrite('$ POST /run task="'+text.slice(0,60)+(text.length>60?'...':'')+'"','term-cmd');
+// --- Input handling ---
+chatInput.addEventListener('input', () => {
+  sendBtn.disabled = !chatInput.value.trim() || isProcessing;
+});
 
-  try{
-    const res=await fetch(API_BASE+'/run',{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({task:text,turns:10})
-    });
-    if(!res.ok)throw new Error('HTTP '+res.status);
-    const data=await res.json();
-    handleRunResponse(data,model);
-  }catch(e){
-    addMsg('system','Failed to reach gateway: '+e.message);
-    termWrite('Error: '+e.message,'term-err');
-    toast('Request failed: '+e.message,'error');
-    autoDiagnose(e.message,'','');
-  }
-  $('send-btn').disabled=false;
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 140) + 'px';
 }
 
-function handleRunResponse(data,model){
-  const route = data.route || {};
-  const tier = route.tier || 'unknown';
-  const routeModel = route.model || '';
-  const reason = route.reason || '';
-  const cost = data.cost_usd || data.cost || 0;
-  const latency = data.latency_s || 0;
-  const output = data.output || data.result || '';
-
-  // Show routing decision in terminal
-  termWrite('> Route: '+tier+' → '+routeModel,'term-cmd');
-  if(reason) termWrite('  Reason: '+reason,'term-info');
-  termWrite('  Latency: '+latency.toFixed(2)+'s | Cost: $'+cost.toFixed(4),'term-info');
-
-  // Check for error in output
-  if(typeof output === 'string' && output.startsWith('[LLM error') || output.startsWith('❌')){
-    addMsg('system', output, {model: tierToModel(tier), cost});
-    termWrite('ERROR: '+output.slice(0,200),'term-err');
-    toast('Task error — check terminal','error');
-    // Auto-diagnose
-    autoDiagnose(output, tier, routeModel);
-  } else {
-    addMsg('agent', typeof output === 'string' ? output : JSON.stringify(output, null, 2),
-      {model: tierToModel(tier), tokens: data.total_tokens||0, cost});
-    toast('Task completed','success');
+function handleInputKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    if (chatInput.value.trim() && !isProcessing) sendMessage();
   }
-
-  // Update metrics
-  S.cost += cost;
-  S.tasksCompleted++;
-  S.routingBreakdown[tier] = (S.routingBreakdown[tier]||0)+1;
-  updateMetrics();
-  renderPieChart();
-  termWrite('--- task complete ('+latency.toFixed(2)+'s) ---','term-info');
 }
 
-function autoDiagnose(errorMsg, tier, model){
-  const msg = errorMsg.toLowerCase();
-  let diagnosis = '';
-  let action = '';
+function useHint(el) {
+  const text = el.textContent.replace(/^"|"$/g, '');
+  chatInput.value = text;
+  chatInput.focus();
+  autoResize(chatInput);
+  sendBtn.disabled = false;
+}
 
-  if(msg.includes('bearer') || msg.includes('401') || msg.includes('unauthorized')){
-    diagnosis = 'API key missing or invalid for '+model;
-    action = 'Check OPENROUTER_API_KEY in core/.env';
-  } else if(msg.includes('402') || msg.includes('credits') || msg.includes('afford')){
-    diagnosis = 'Insufficient OpenRouter credits for '+model;
-    action = 'Add credits at openrouter.ai/settings/credits or switch to a free model';
-  } else if(msg.includes('not a valid model')){
-    diagnosis = 'Model ID "'+model+'" not found on provider';
-    action = 'Check model ID at openrouter.ai/models';
-  } else if(msg.includes('timeout') || msg.includes('timed out')){
-    diagnosis = 'Request to '+model+' timed out';
-    action = 'Model may be overloaded — try again or use a different tier';
-  } else if(msg.includes('connection refused') || msg.includes('connect')){
-    diagnosis = 'Cannot reach '+model+' endpoint';
-    action = tier === 'uncensored_local' ? 'Check Ollama is running: systemctl status ollama' : 'Check internet connectivity';
-  } else if(msg.includes('ollama') || msg.includes('11434')){
-    diagnosis = 'Ollama service unreachable';
-    action = 'Start Ollama: sudo systemctl start ollama';
-  } else if(msg.includes('vast') || msg.includes('gpu')){
-    diagnosis = 'Vast.ai GPU provisioning failed';
-    action = 'Check VAST_API_KEY and account balance at vast.ai';
-  } else if(msg.includes('rate limit') || msg.includes('429')){
-    diagnosis = 'Rate limited by '+model;
-    action = 'Waiting and retrying automatically...';
-    // Auto-retry after 5 seconds
-    setTimeout(()=>{
-      addMsg('system','Auto-retrying after rate limit...');
-      sendMessage();
-    }, 5000);
+// --- Trace sidebar ---
+function toggleTrace() {
+  sidebarOpen = !sidebarOpen;
+  traceSidebar.classList.toggle('open', sidebarOpen);
+  traceToggleBtn.classList.toggle('active', sidebarOpen);
+}
+
+// --- WebSocket ---
+function connectWS() {
+  try {
+    ws = new WebSocket(WS_URL);
+  } catch(e) {
+    updateWSStatus(false);
     return;
-  } else {
-    diagnosis = 'Unknown error on '+tier+' tier';
-    action = 'Check: journalctl -u ncore-gateway -n 20';
   }
 
-  addMsg('system', '🔍 Diagnosis: '+diagnosis+'\n💡 Action: '+action);
-  termWrite('DIAG: '+diagnosis,'term-err');
-  termWrite('FIX:  '+action,'term-info');
+  ws.onopen = () => {
+    wsRetries = 0;
+    updateWSStatus(true);
+  };
+
+  ws.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      handleWSEvent(data);
+    } catch(e) {
+      console.warn('WS parse error:', e);
+    }
+  };
+
+  ws.onclose = () => {
+    updateWSStatus(false);
+    if (wsRetries < WS_MAX_RETRIES) {
+      wsRetries++;
+      setTimeout(connectWS, WS_RECONNECT_DELAY);
+    }
+  };
+
+  ws.onerror = () => {
+    // onclose will handle reconnect
+  };
 }
 
-// Simulated response for demo/offline mode
-function simulateResponse(text,model){
-  setTimeout(()=>{
-    addMsg('agent','[Demo Mode] Gateway offline — showing simulated response.\n\nTask received: "'+text+'"\nModel: '+MODELS[model]+'\n\nIn production, this routes through the 5-layer NCore router:\n1. Cache check (Redis/RadixAttention)\n2. Complexity classifier\n3. Athena MoE gate\n4. Cost optimizer\n5. Model dispatch',
-      {model,tokens:247,cost:0.0003,thinking:'Analyzing task complexity...\nSelected routing tier: '+model+'\nEstimated tokens: 247'});
-    S.tokensOut+=247;S.tokensIn+=text.split(/\s+/).length*1.3|0;
-    S.cost+=0.0003;S.tasksCompleted++;
-    updateMetrics();
-    termWrite('> [demo] simulated response','term-info');
-  },800);
+function updateWSStatus(connected) {
+  wsStatusEl.className = 'status-badge ' + (connected ? 'connected' : 'disconnected');
+  wsStatusEl.innerHTML = `<span class="status-dot${connected ? ' pulse' : ''}"></span><span>${connected ? 'Connected' : 'Disconnected'}</span>`;
+  readyStatusEl.style.display = connected ? 'flex' : 'none';
 }
 
-// ===== INPUT HANDLING =====
-$('chat-input').addEventListener('keydown',e=>{
-  if(e.key==='Enter'&&!e.ctrlKey&&!e.shiftKey){e.preventDefault();sendMessage()}
-  if(e.key==='Enter'&&e.ctrlKey){/* allow newline */}
-});
-$('chat-input').addEventListener('input',autoResizeInput);
-function autoResizeInput(){
-  const el=$('chat-input');el.style.height='auto';el.style.height=Math.min(el.scrollHeight,150)+'px';
-}
+function handleWSEvent(data) {
+  const type = data.type || data.event;
 
-// ===== MODEL SELECTOR =====
-$('model-select').addEventListener('change',function(){
-  $('bb-model').textContent=MODELS[this.value]||this.value;
-});
-
-// ===== NAV =====
-document.querySelectorAll('.lp-nav a').forEach(a=>{
-  a.addEventListener('click',function(){
-    document.querySelectorAll('.lp-nav a').forEach(x=>x.classList.remove('active'));
-    this.classList.add('active');
-    // Views could be expanded — for now all show the main chat
-  });
-});
-
-// ===== WEBSOCKET =====
-function connectWS(){
-  try{
-    const wsHost = API_BASE ? new URL(API_BASE).host : location.host;
-    S.ws=new WebSocket((location.protocol==='https:'?'wss:':'ws:')+'//'+wsHost+'/ws');
-    S.ws.onopen=()=>{
-      S.wsOk=true;$('term-status').className='dot up';
-      termWrite('WebSocket connected','term-info');
-      if(S.pollTimer){clearInterval(S.pollTimer);S.pollTimer=null}
-    };
-    S.ws.onmessage=ev=>{
-      try{const msg=JSON.parse(ev.data);handleWSMessage(msg)}
-      catch(e){termWrite(ev.data)}
-    };
-    S.ws.onclose=()=>{
-      S.wsOk=false;$('term-status').className='dot down';
-      termWrite('WebSocket disconnected — falling back to polling','term-err');
-      startPolling();
-      setTimeout(connectWS,5000);
-    };
-    S.ws.onerror=()=>{S.ws.close()};
-  }catch(e){startPolling()}
-}
-
-function handleWSMessage(msg){
-  switch(msg.type){
-    case 'route':
-      // Routing decision from orchestrator
-      const r = msg.data || msg;
-      termWrite('> Route: '+r.tier+' → '+(r.model||'')+(r.reason?' ('+r.reason+')':''),'term-cmd');
-      addMsg('system','Routing to '+r.tier+' tier → '+(r.model||'unknown'));
-      // Update routing breakdown
-      S.routingBreakdown[r.tier] = (S.routingBreakdown[r.tier]||0)+1;
-      renderPieChart();
-      break;
-    case 'enhance':
-      const e = msg.data || msg;
-      termWrite('> Enhance: domains='+JSON.stringify(e.domains)+' critic='+e.critic_score,'term-info');
-      break;
-    case 'discover':
-      const disc = msg.data || msg;
-      if(disc.tools_found > 0){
-        termWrite('> Skills found: '+disc.tools.join(', '),'term-info');
-        toast(disc.tools_found+' existing tool(s) equipped','info');
-      }
-      break;
+  switch(type) {
     case 'plan':
-      const plan = msg.data || msg;
-      termWrite('> Task: '+plan.task_type+' | GPU: '+plan.gpu_profile+' | Est. cost: $'+plan.estimated_cost,'term-info');
-      if(plan.sub_tasks){
-        plan.sub_tasks.forEach(st => termWrite('  ['+st.id+'] '+st.name+': '+st.description,'term-info'));
-      }
-      if(plan.blocked){
-        addMsg('system','\u26a0\ufe0f '+plan.block_reason);
-        toast(plan.block_reason,'error');
-      }
+      handlePlanEvent(data);
+      break;
+    case 'route':
+      handleRouteEvent(data);
       break;
     case 'result':
-      const d = msg.data || msg;
-      termWrite('> Result: tier='+d.tier+' model='+d.model+' latency='+d.latency_s+'s cost=$'+d.cost_usd,'term-info');
-      if(d.output_preview) addMsg('agent', d.output_preview+'...', {model: tierToModel(d.tier), cost: d.cost_usd});
-      if(d.cost_usd) S.cost += d.cost_usd;
-      S.tasksCompleted++;
-      updateMetrics();
+      handleResultEvent(data);
       break;
-    case 'gpu_complete':
-      const g = msg.data || msg;
-      toast(g.pod_type+' generation complete — '+g.duration_s+'s, $'+g.cost_usd.toFixed(4),'success');
-      termWrite('> GPU: '+g.gpu_profile+' completed in '+g.duration_s+'s (cost: $'+g.cost_usd.toFixed(4)+')','term-info');
+    case 'progress':
+      handleProgressEvent(data);
       break;
-    case 'agent_zero':
-      const az = msg.data || msg;
-      toast('Agent Zero completed — '+az.steps+' steps, '+az.duration_s+'s','success');
-      termWrite('> Agent Zero: '+az.steps+' steps, '+az.duration_s+'s','term-info');
-      break;
-    case 'investigation':
-      const inv = msg.data || msg;
-      if(inv.status === 'executing'){
-        startInvestigation(inv.target, inv.tools);
-        termWrite('> INVESTIGATION: target='+inv.target,'term-cmd');
-      } else if(inv.status === 'tool_start'){
-        updateToolTrace(inv.tool, 'running', inv.message||'Starting...', 0);
-        termWrite('  ['+inv.tool+'] started','term-info');
-      } else if(inv.status === 'tool_output'){
-        updateToolTrace(inv.tool, 'running', inv.output, inv.findings||0);
-      } else if(inv.status === 'tool_done'){
-        updateToolTrace(inv.tool, 'success', inv.summary||'Complete', inv.findings||0);
-        termWrite('  ['+inv.tool+'] complete: '+(inv.findings||0)+' findings','term-info');
-      } else if(inv.status === 'tool_error'){
-        updateToolTrace(inv.tool, 'error', inv.error||'Failed', 0);
-        termWrite('  ['+inv.tool+'] FAILED: '+inv.error,'term-err');
-      } else if(inv.status === 'complete'){
-        endInvestigation(inv.summary);
-        toast('Investigation complete — '+inv.steps+' tools, '+inv.duration_s+'s','success');
-        termWrite('> INVESTIGATION COMPLETE: '+(inv.steps||'?')+' tools in '+(inv.duration_s||'?')+'s','term-info');
-      }
-      break;
-    // Legacy event types (backward compat)
-    case 'step':
-      if(msg.tool)addMsg('tool',msg.result||'',{toolName:msg.tool,args:msg.args,model:msg.model});
-      else addMsg('agent',msg.content||'',{model:msg.model,tokens:msg.tokens,cost:msg.cost});
-      break;
-    case 'terminal':
-      termWrite(msg.data,msg.error?'term-err':'');
-      break;
-    case 'metrics':
-      applyMetrics(msg);break;
-    case 'status':
-      updateServiceStatus(msg);break;
     case 'error':
-      addMsg('system','Error: '+(msg.message||msg.error||JSON.stringify(msg.data||msg)));
-      toast(msg.message||msg.error||'Error','error');
+      handleErrorEvent(data);
       break;
-    default:
-      termWrite('> WS: '+JSON.stringify(msg),'term-info');
   }
 }
 
-// ===== INVESTIGATION TRACE =====
-const traceState = {tools: {}, mode: 'terminal', investigationActive: false};
+function handlePlanEvent(data) {
+  // Show planning phase, create agent cards
+  traceEmpty.style.display = 'none';
+  tracePlanning.classList.add('active');
+  traceSubtitle.textContent = 'Planning execution...';
+  taskStartTime = Date.now();
 
-function toggleTraceMode(){
-  traceState.mode = traceState.mode === 'terminal' ? 'trace' : 'terminal';
-  $('terminal-view').style.display = traceState.mode === 'terminal' ? '' : 'none';
-  $('trace-view').style.display = traceState.mode === 'trace' ? '' : 'none';
-  $('trace-mode-btn').textContent = traceState.mode === 'terminal' ? 'Terminal' : 'Trace';
-  $('trace-title').textContent = traceState.mode === 'terminal' ? 'Live Terminal' : 'Tool Execution Trace';
+  if (!sidebarOpen) toggleTrace();
+
+  // After a short delay, show agent cards from plan
+  setTimeout(() => {
+    tracePlanning.classList.remove('active');
+    traceSubtitle.textContent = 'Executing agents...';
+
+    const agents = data.agents || data.specialists || data.steps || [];
+    agents.forEach((agent, i) => {
+      setTimeout(() => {
+        const name = typeof agent === 'string' ? agent : (agent.name || agent.role || `Agent ${i+1}`);
+        const isCloud = typeof agent === 'object' ? agent.cloud : false;
+        createAgentCard(name, isCloud);
+      }, i * 150); // stagger animations
+    });
+  }, 1200);
 }
 
-function startInvestigation(target, tools){
-  traceState.investigationActive = true;
-  traceState.tools = {};
-  const container = $('trace-cards');
-  container.innerHTML = '';
+function handleRouteEvent(data) {
+  traceEmpty.style.display = 'none';
+  const name = data.agent || data.specialist || data.name || 'Unknown Agent';
+  const isCloud = data.cloud || false;
+  if (!currentAgents[name]) {
+    createAgentCard(name, isCloud);
+  }
+  updateAgentStatus(name, 'running');
+  traceSubtitle.textContent = `Running: ${name}`;
+}
 
-  // Auto-switch to trace mode
-  if(traceState.mode !== 'trace') toggleTraceMode();
+function handleResultEvent(data) {
+  const name = data.agent || data.specialist || data.name;
+  if (name && currentAgents[name]) {
+    updateAgentStatus(name, data.error ? 'error' : 'done');
+  }
+  // Check if all done
+  const allDone = Object.values(currentAgents).every(a => a.status === 'done' || a.status === 'error');
+  if (allDone && Object.keys(currentAgents).length > 0) {
+    finalizeTrace();
+  }
+}
 
-  // Create a card for each tool
-  (tools||['sherlock','maigret','h8mail','HIBP','web_search','IntelX']).forEach((tool,i) => {
-    traceState.tools[tool] = {status:'pending', output:'', startTime:null, endTime:null, findings:0};
-    const card = document.createElement('div');
-    card.className = 'trace-card';
-    card.id = 'trace-'+tool;
-    card.innerHTML = `
-      <div class="trace-header" onclick="this.parentElement.classList.toggle('expanded')">
-        <div class="trace-icon" id="icon-${tool}">&#9679;</div>
-        <span class="trace-tool-name">${esc(tool)}</span>
-        <span class="trace-time" id="time-${tool}">&mdash;</span>
-        <span class="trace-status" id="status-${tool}">pending</span>
+function handleProgressEvent(data) {
+  const name = data.agent || data.specialist || data.name;
+  const progress = data.progress || 0;
+  if (name && currentAgents[name]) {
+    const bar = currentAgents[name].progressBar;
+    if (bar) bar.style.width = progress + '%';
+  }
+}
+
+function handleErrorEvent(data) {
+  const name = data.agent || data.specialist || data.name;
+  if (name && currentAgents[name]) {
+    updateAgentStatus(name, 'error');
+  }
+}
+
+// --- Agent Card Management ---
+function createAgentCard(name, isCloud) {
+  if (currentAgents[name]) return;
+
+  const card = document.createElement('div');
+  card.className = 'agent-card running';
+  card.style.animationDelay = '0s';
+
+  const typeLabel = isCloud ? '☁️ Cloud' : '🔒 Local';
+
+  card.innerHTML = `
+    <div class="agent-card-header">
+      <div class="agent-info">
+        <div class="agent-icon">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2a10 10 0 0 1 10 10 10 10 0 0 1-10 10A10 10 0 0 1 2 12 10 10 0 0 1 12 2z"/>
+            <path d="M12 6v6l4 2"/>
+          </svg>
+        </div>
+        <div class="agent-name-group">
+          <div class="agent-name">${escapeHtml(name)}</div>
+          <div class="agent-type-badge">
+            <span class="type-icon">${isCloud ? '☁️' : '🔒'}</span>
+            ${isCloud ? 'Cloud' : 'Local'}
+          </div>
+        </div>
       </div>
-      <div class="trace-body">
-        <div class="trace-stdout" id="stdout-${tool}">Waiting to start...</div>
-      </div>`;
-    container.appendChild(card);
-  });
+      <div class="agent-card-meta">
+        <span class="agent-time" data-agent-time="${name}">0.0s</span>
+        <div class="agent-status-icon">
+          <div class="status-spinner"></div>
+        </div>
+      </div>
+    </div>
+    <div class="agent-progress">
+      <div class="agent-progress-bar" style="width: 15%"></div>
+    </div>
+  `;
 
-  // Add investigation message to chat
-  const toolBadges = (tools||[]).map(t => `<span class="inv-tool-badge">${esc(t)}</span>`).join('');
-  addMsg('investigation',
-    `<div class="inv-header">&#128270; Investigation Started</div>
-     <div class="inv-target">${esc(target)}</div>
-     <div style="margin-top:4px;font-size:12px;color:var(--text2)">Executing ${(tools||[]).length} OSINT tools in parallel</div>
-     <div class="inv-tools">${toolBadges}</div>
-     <div class="inv-progress"><div class="inv-progress-fill" id="inv-progress"></div></div>`, {});
-}
+  agentCardsEl.appendChild(card);
 
-function updateToolTrace(tool, status, output, findings){
-  const ts = traceState.tools[tool];
-  if(!ts) return;
+  const progressBar = card.querySelector('.agent-progress-bar');
 
-  ts.status = status;
-  if(output) ts.output += output + '\n';
-  if(findings) ts.findings = findings;
+  currentAgents[name] = {
+    card,
+    progressBar,
+    status: 'running',
+    startTime: Date.now()
+  };
 
-  const card = $('trace-'+tool);
-  if(!card) return;
+  // Start timer
+  agentTimers[name] = setInterval(() => {
+    const elapsed = ((Date.now() - currentAgents[name].startTime) / 1000).toFixed(1);
+    const timeEl = card.querySelector(`[data-agent-time="${CSS.escape(name)}"]`);
+    if (timeEl) timeEl.textContent = elapsed + 's';
 
-  const icon = $('icon-'+tool);
-  const statusEl = $('status-'+tool);
-  const timeEl = $('time-'+tool);
-  const stdoutEl = $('stdout-'+tool);
-
-  if(status === 'running' && !ts.startTime) {
-    ts.startTime = Date.now();
-    card.classList.add('active');
-    card.classList.add('expanded');
-    icon.className = 'trace-icon running';
-    icon.innerHTML = '&#9881;';
-    statusEl.className = 'trace-status running';
-    statusEl.textContent = 'running';
-  }
-
-  if(status === 'success') {
-    ts.endTime = Date.now();
-    card.classList.remove('active');
-    card.classList.add('success');
-    icon.className = 'trace-icon done';
-    icon.innerHTML = '&#10003;';
-    statusEl.className = 'trace-status success';
-    statusEl.textContent = findings ? findings+' found' : 'done';
-    timeEl.textContent = ((ts.endTime - ts.startTime)/1000).toFixed(1)+'s';
-  }
-
-  if(status === 'error') {
-    ts.endTime = Date.now();
-    card.classList.remove('active');
-    card.classList.add('error');
-    icon.className = 'trace-icon fail';
-    icon.innerHTML = '&#10007;';
-    statusEl.className = 'trace-status error';
-    statusEl.textContent = 'failed';
-  }
-
-  if(output) {
-    // Highlight key findings
-    let highlighted = esc(output)
-      .replace(/(found|match|hit|positive|exists?|active|registered)/gi, '<span class="found">$1</span>')
-      .replace(/(not found|no results?|negative|missing|inactive)/gi, '<span class="notfound">$1</span>')
-      .replace(/(\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b)/g, '<span class="highlight">$1</span>')
-      .replace(/(https?:\/\/\S+)/g, '<span class="highlight">$1</span>');
-    stdoutEl.innerHTML = highlighted;
-    // Auto-scroll stdout
-    stdoutEl.scrollTop = stdoutEl.scrollHeight;
-  }
-
-  // Update progress bar
-  const total = Object.keys(traceState.tools).length;
-  const done = Object.values(traceState.tools).filter(t => t.status === 'success' || t.status === 'error').length;
-  const pct = Math.round((done/total)*100);
-  const progEl = $('inv-progress');
-  if(progEl) progEl.style.width = pct+'%';
-}
-
-function endInvestigation(summary){
-  traceState.investigationActive = false;
-  // Switch all pending to skipped
-  Object.entries(traceState.tools).forEach(([tool, ts]) => {
-    if(ts.status === 'pending') {
-      updateToolTrace(tool, 'error', 'Skipped', 0);
+    // Simulate progress if no WS progress events
+    if (currentAgents[name].status === 'running') {
+      const currentWidth = parseFloat(progressBar.style.width) || 15;
+      if (currentWidth < 85) {
+        progressBar.style.width = (currentWidth + Math.random() * 3) + '%';
+      }
     }
-  });
-  const progEl = $('inv-progress');
-  if(progEl) progEl.style.width = '100%';
+  }, 100);
 }
 
-function tierToModel(tier){
-  const map = {fast:'fast',free_coder:'free',free_reasoning:'worker',worker:'worker',opus:'opus',uncensored_local:'local',uncensored:'local',image:'local',video:'local'};
-  return map[tier] || 'worker';
-}
+function updateAgentStatus(name, status) {
+  const agent = currentAgents[name];
+  if (!agent) return;
 
-// ===== POLLING FALLBACK =====
-function startPolling(){
-  if(S.pollTimer)return;
-  S.pollTimer=setInterval(async()=>{
-    try{
-      const [ready,m]=await Promise.all([
-        fetch(API_BASE+'/ready').then(r=>r.json()).catch(()=>null),
-        fetch(API_BASE+'/metrics').then(r=>r.text()).catch(()=>null)
-      ]);
-      if(ready && ready.checks) updateServiceStatus(ready.checks);
-      if(m)parsePrometheusMetrics(m);
-    }catch(e){}
-  },3000);
-}
+  agent.status = status;
+  const card = agent.card;
+  card.className = `agent-card ${status}`;
 
-function updateServiceStatus(checks){
-  // checks is {gateway: {status:"ok"}, redis: {status:"ok"}, ollama: {status:"ok", models:[...]}, ...}
-  const map = {
-    gateway: 'st-gateway',
-    redis: 'st-redis',
-    ollama: 'st-ollama',
-    agent_zero: 'st-openclaw'  // Repurpose OpenClaw dot for Agent Zero
-  };
-  Object.entries(map).forEach(([key, elId])=>{
-    const el = $(elId);
-    if(!el) return;
-    const check = checks[key];
-    if(!check) { el.className='dot unknown'; return; }
-    el.className = 'dot ' + (check.status === 'ok' ? 'up' : check.status === 'not_deployed' ? 'unknown' : 'down');
-  });
-  // Update label for Agent Zero
-  const azLabel = $('st-openclaw');
-  if(azLabel && azLabel.parentElement){
-    const textNode = azLabel.parentElement.lastChild;
-    if(textNode && textNode.nodeType === 3) textNode.textContent = 'Agent Zero';
-  }
-}
+  // Stop timer
+  if (status === 'done' || status === 'error') {
+    clearInterval(agentTimers[name]);
 
-// ===== PROMETHEUS PARSER =====
-function parsePrometheusMetrics(text){
-  const get=(name)=>{
-    const m=text.match(new RegExp('^'+name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'(?:\\{[^}]*\\})?\\s+([\\d.eE+\\-]+)','m'));
-    return m?parseFloat(m[1]):null;
-  };
-  const getAll=(name)=>{
-    const re=new RegExp('^'+name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\{([^}]*)\\}\\s+([\\d.eE+\\-]+)','gm');
-    const results={};let match;
-    while((match=re.exec(text))!==null){
-      const labels={};match[1].split(',').forEach(p=>{const[k,v]=p.split('=');labels[k]=v?v.replace(/"/g,''):''});
-      results[JSON.stringify(labels)]=parseFloat(match[2]);
+    const elapsed = ((Date.now() - agent.startTime) / 1000).toFixed(1);
+    const timeEl = card.querySelector(`[data-agent-time="${CSS.escape(name)}"]`);
+    if (timeEl) timeEl.textContent = elapsed + 's';
+
+    // Update status icon
+    const statusIcon = card.querySelector('.agent-status-icon');
+    if (status === 'done') {
+      statusIcon.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+    } else {
+      statusIcon.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
     }
-    return results;
-  };
 
-  const requests=get('ncore_requests_total');
-  const cost=get('ncore_cost_usd_total');
-  const pods=get('ncore_vast_pods_active');
-  const cacheRate=get('ncore_cache_hit_rate');
-
-  if(requests!=null){S.tasksCompleted=Math.round(requests);$('m-tasks').textContent=fmtNum(S.tasksCompleted)}
-  if(cost!=null){S.cost=cost}
-  if(pods!=null){
-    $('bb-gpus').textContent=Math.round(pods);
-    $('bb-gpu-dot').className='dot '+(pods>0?'up':'down');
+    // Update agent icon
+    const agentIcon = card.querySelector('.agent-icon');
+    if (status === 'done') {
+      agentIcon.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+    } else {
+      agentIcon.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>';
+    }
   }
-  if(cacheRate!=null){
-    const q=Math.round(cacheRate*100);
-    S.qualityScore=q;$('m-quality').textContent=q+'%';
+}
+
+function finalizeTrace() {
+  const totalTime = taskStartTime ? ((Date.now() - taskStartTime) / 1000).toFixed(1) : '—';
+  const agentCount = Object.keys(currentAgents).length;
+  const doneCount = Object.values(currentAgents).filter(a => a.status === 'done').length;
+
+  traceTotalTime.textContent = totalTime + 's';
+  traceTotalTime.className = 'trace-summary-value success';
+  traceAgentCount.textContent = `${doneCount}/${agentCount} completed`;
+  traceSummary.classList.add('active');
+  traceSubtitle.textContent = 'Complete';
+}
+
+function resetTrace() {
+  Object.values(agentTimers).forEach(clearInterval);
+  agentTimers = {};
+  currentAgents = {};
+  taskStartTime = null;
+  agentCardsEl.innerHTML = '';
+  tracePlanning.classList.remove('active');
+  traceEmpty.style.display = 'flex';
+  traceSummary.classList.remove('active');
+  traceSubtitle.textContent = 'Waiting for task';
+}
+
+// --- Chat Messages ---
+function addMessage(role, content, specialistResults) {
+  welcomeState.classList.add('hidden');
+  chatMessages.style.display = 'flex';
+  chatMessages.style.flexDirection = 'column';
+  chatMessages.style.flex = '1';
+
+  const row = document.createElement('div');
+  row.className = `message-row ${role}`;
+
+  const avatar = document.createElement('div');
+  avatar.className = 'message-avatar';
+  avatar.textContent = role === 'user' ? 'U' : 'N';
+
+  const bubble = document.createElement('div');
+  bubble.className = 'message-bubble';
+
+  // Render markdown for system messages
+  if (role === 'system' && typeof marked !== 'undefined') {
+    bubble.innerHTML = marked.parse(content);
+  } else {
+    bubble.textContent = content;
   }
 
-  // Routing breakdown
-  const tiers=getAll('ncore_route_tier_total');
-  S.routingBreakdown={};
-  Object.entries(tiers).forEach(([k,v])=>{
-    try{const l=JSON.parse(k);S.routingBreakdown[l.tier||'unknown']=v}catch(e){}
-  });
+  // Specialist results
+  if (specialistResults && specialistResults.length > 0) {
+    const specDiv = document.createElement('div');
+    specDiv.className = 'specialist-results';
 
-  updateMetrics();
-  renderPieChart();
-}
+    const toggle = document.createElement('button');
+    toggle.className = 'specialist-toggle';
+    toggle.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="9 18 15 12 9 6"/>
+      </svg>
+      ${specialistResults.length} specialist result${specialistResults.length > 1 ? 's' : ''}
+    `;
 
-// ===== METRICS UPDATE =====
-function updateMetrics(){
-  $('m-tasks').textContent=fmtNum(S.tasksCompleted);
-  $('m-tokens').textContent=fmtNum(S.tokensIn+S.tokensOut);
-  $('m-cost').textContent=fmtCost(S.cost);
-  if(S.qualityScore!=null)$('m-quality').textContent=S.qualityScore+'%';
-  $('bb-tokens-in').textContent=fmtNum(S.tokensIn);
-  $('bb-tokens-out').textContent=fmtNum(S.tokensOut);
-  $('bb-cost').textContent=fmtCost(S.cost);
-}
+    const detail = document.createElement('div');
+    detail.className = 'specialist-detail';
 
-function applyMetrics(m){
-  if(m.tokens_in!=null)S.tokensIn=m.tokens_in;
-  if(m.tokens_out!=null)S.tokensOut=m.tokens_out;
-  if(m.cost!=null)S.cost=m.cost;
-  if(m.tasks!=null)S.tasksCompleted=m.tasks;
-  if(m.quality!=null){S.qualityScore=m.quality;$('m-quality').textContent=m.quality+'%'}
-  if(m.gpus)renderGPUs(m.gpus);
-  if(m.routing)S.routingBreakdown=m.routing;
-  updateMetrics();
-  renderPieChart();
-}
+    specialistResults.forEach(spec => {
+      const card = document.createElement('div');
+      card.className = 'specialist-card-inline';
+      const specName = spec.specialist || spec.agent || spec.name || 'Agent';
+      const specContent = typeof spec.content === 'string' ? spec.content : (spec.result || spec.output || JSON.stringify(spec, null, 2));
+      card.innerHTML = `
+        <div class="spec-name">${escapeHtml(specName)}</div>
+        <div class="spec-content">${escapeHtml(String(specContent).substring(0, 800))}</div>
+      `;
+      detail.appendChild(card);
+    });
 
-// ===== GPU BARS =====
-function renderGPUs(gpus){
-  const c=$('gpu-bars');
-  if(!gpus||gpus.length===0){c.innerHTML='<div style="font-size:11px;color:var(--text3)">No active GPUs</div>';return}
-  c.innerHTML='';
-  gpus.forEach(g=>{
-    const w=document.createElement('div');w.className='gpu-bar-wrap';
-    const pct=Math.round((g.utilization||0)*100);
-    const costStr=g.cost!=null?' — '+fmtCost(g.cost)+'/hr':'';
-    w.innerHTML='<div class="gpu-bar-label"><span>'+esc(g.name||g.id||'GPU')+'</span><span>'+pct+'%'+costStr+'</span></div>'+
-      '<div class="gpu-bar"><div class="gpu-bar-fill" style="width:'+pct+'%"></div></div>';
-    c.appendChild(w);
-  });
-  $('bb-gpus').textContent=gpus.length;
-  $('bb-gpu-dot').className='dot up';
-  const totalCost=gpus.reduce((a,g)=>a+(g.cost||0),0);
-  $('bb-gpu-cost').textContent=totalCost>0?'('+fmtCost(totalCost)+'/hr)':'';
-}
+    toggle.addEventListener('click', () => {
+      toggle.classList.toggle('open');
+      detail.classList.toggle('open');
+    });
 
-// ===== PIE CHART (CSS conic-gradient) =====
-function renderPieChart(){
-  const data=S.routingBreakdown;const keys=Object.keys(data);
-  if(keys.length===0){
-    // Demo data if nothing from metrics
-    Object.assign(S.routingBreakdown,{local:40,free:25,fast:15,worker:15,opus:5});
-    renderPieChart();return;
+    specDiv.appendChild(toggle);
+    specDiv.appendChild(detail);
+    bubble.appendChild(specDiv);
   }
-  const total=Object.values(data).reduce((a,b)=>a+b,0)||1;
-  const colors={local:'#e3b341',free:'#3fb950',fast:'#58a6ff',worker:'#bc8cff',opus:'#f47067',
-    nano:'#e3b341',super:'#58a6ff',coder:'#3fb950',uncensored:'#f47067'};
-  let stops=[];let cum=0;
-  const legend=$('pie-legend');legend.innerHTML='';
-  keys.forEach(k=>{
-    const pct=data[k]/total*100;
-    const c=colors[k]||'#8b949e';
-    stops.push(c+' '+cum.toFixed(1)+'% '+(cum+pct).toFixed(1)+'%');
-    cum+=pct;
-    legend.innerHTML+='<div><span style="background:'+c+'"></span>'+esc(k)+' '+Math.round(pct)+'%</div>';
+
+  // Timestamp
+  const meta = document.createElement('div');
+  meta.className = 'message-meta';
+  meta.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+  row.appendChild(avatar);
+  row.appendChild(bubble);
+  messagesContainer.appendChild(row);
+  messagesContainer.appendChild(meta);
+
+  // Scroll to bottom
+  requestAnimationFrame(() => {
+    chatMessages.scrollTop = chatMessages.scrollHeight;
   });
-  $('pie-chart').style.background='conic-gradient('+stops.join(',')+')';
 }
 
-// ===== UPTIME =====
-setInterval(()=>{$('bb-uptime').textContent=fmtTime(Date.now()-S.startTime)},1000);
+function showTyping(show) {
+  let indicator = document.getElementById('typingIndicator');
+  if (show && !indicator) {
+    indicator = document.createElement('div');
+    indicator.id = 'typingIndicator';
+    indicator.className = 'message-row system';
+    indicator.innerHTML = `
+      <div class="message-avatar" style="background: linear-gradient(135deg, var(--cyan-dim), rgba(6,182,212,0.05)); color: var(--cyan); border: 1px solid rgba(6,182,212,0.15);">N</div>
+      <div class="message-bubble" style="display:flex; align-items:center; gap:4px; padding:14px 18px;">
+        <div class="typing-dot"></div>
+        <div class="typing-dot"></div>
+        <div class="typing-dot"></div>
+      </div>
+    `;
+    indicator.style.animation = 'msgSlideIn 0.35s cubic-bezier(0.16,1,0.3,1) both';
+    messagesContainer.appendChild(indicator);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  } else if (!show && indicator) {
+    indicator.remove();
+  }
+}
 
-// ===== SCROLL LOCK (chat) =====
-$('chat-feed').addEventListener('scroll',function(){
-  const el=this;
-  S.scrollLockChat=el.scrollTop+el.clientHeight<el.scrollHeight-50;
-});
+// --- Send Message / API ---
+async function sendMessage() {
+  const text = chatInput.value.trim();
+  if (!text || isProcessing) return;
 
-// ===== INIT =====
-(function init(){
-  newSession();
+  isProcessing = true;
+  sendBtn.disabled = true;
+  chatInput.value = '';
+  autoResize(chatInput);
+
+  addMessage('user', text);
+  resetTrace();
+  showTyping(true);
+
+  // Show planning in trace
+  traceEmpty.style.display = 'none';
+  tracePlanning.classList.add('active');
+  traceSubtitle.textContent = 'Planning execution...';
+  taskStartTime = Date.now();
+  if (!sidebarOpen) toggleTrace();
+
+  try {
+    const res = await fetch(API_URL + '/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ task: text, turns: 0 })
+    });
+
+    showTyping(false);
+
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    const data = await res.json();
+
+    // Process specialist results into trace cards
+    const specialists = data.specialist_results || data.specialists || [];
+    if (specialists.length > 0) {
+      tracePlanning.classList.remove('active');
+      traceSubtitle.textContent = 'Executing agents...';
+
+      specialists.forEach((spec, i) => {
+        const name = spec.specialist || spec.agent || spec.name || `Agent ${i+1}`;
+        const isCloud = spec.cloud || false;
+        setTimeout(() => {
+          createAgentCard(name, isCloud);
+          // Mark as done after a short delay
+          setTimeout(() => {
+            updateAgentStatus(name, spec.error ? 'error' : 'done');
+          }, 400 + Math.random() * 300);
+        }, i * 200);
+      });
+
+      // Finalize after all cards
+      setTimeout(() => {
+        finalizeTrace();
+      }, specialists.length * 200 + 800);
+    } else {
+      tracePlanning.classList.remove('active');
+      traceSubtitle.textContent = 'Complete';
+    }
+
+    // Display response
+    const output = data.output || data.result || data.response || data.message || JSON.stringify(data, null, 2);
+    addMessage('system', output, specialists);
+
+  } catch (err) {
+    showTyping(false);
+    tracePlanning.classList.remove('active');
+
+    addMessage('system', `**Error:** Could not reach the NCore API.\n\n\`${err.message}\`\n\nMake sure the gateway is running on port 8080.`);
+    traceSubtitle.textContent = 'Error';
+  }
+
+  isProcessing = false;
+  sendBtn.disabled = !chatInput.value.trim();
+}
+
+// --- Utilities ---
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function formatTime(seconds) {
+  if (seconds < 60) return seconds.toFixed(1) + 's';
+  const m = Math.floor(seconds / 60);
+  const s = (seconds % 60).toFixed(0);
+  return `${m}m ${s}s`;
+}
+
+// --- Init ---
+document.addEventListener('DOMContentLoaded', () => {
   connectWS();
-  startPolling(); // start polling immediately, WS will cancel it on connect
-  renderPieChart();
-  $('scroll-lock-btn').classList.add('on');
-  addMsg('system','NCore Genesis v7.6 Mission Control ready. Gateway: '+location.origin);
-  addMsg('agent','Welcome to NCore Genesis v7.6. I route tasks through a 7-tier cascade:\n\n'+
-    '1. Local \u2014 Dark Champion V2 21B + Qwen3.5 abliterated ($0)\n'+
-    '2. Fast \u2014 GPT-OSS 20B free ($0, matches o3-mini)\n'+
-    '3. Free Coder \u2014 Qwen3 Coder 480B ($0)\n'+
-    '4. Free Reasoning \u2014 DeepSeek R1 ($0)\n'+
-    '5. Worker \u2014 DeepSeek V3.2 ($0.14/$0.28/M)\n'+
-    '6. Opus \u2014 Claude 4.6 ($5/$25/M, budget-gated)\n'+
-    '7. GPU \u2014 Vast.ai burst (video/image gen)\n\n'+
-    'Select a model or let the router choose automatically.',
-    {model:'fast',tokens:0,cost:0});
-})();
+  chatInput.focus();
+});
 </script>
 </body>
 </html>
