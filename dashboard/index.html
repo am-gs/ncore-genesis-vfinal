@@ -1,1515 +1,1328 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NCore Genesis — Mission Control v6</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%230f172a'/><text x='16' y='22' font-size='18' font-weight='bold' fill='%2306b6d4' text-anchor='middle' font-family='system-ui'>N</text></svg>">
+<title>NCore Genesis v6.0 — Live Dashboard</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <style>
-/* ═══════════════════════════════════════════════════════════════
-   NCore Genesis Mission Control v6.0
-   Design: Deep navy + glassmorphism + cyan accent
-   Patterns: Manus.im chat + Langfuse trace tree
-   ═══════════════════════════════════════════════════════════════ */
+/* ── Reset ── */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-rendering:optimizeLegibility}
 
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-:root {
-  --font-ui: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
-  --header-h: 48px;
-  --trace-w: 400px;
-  --monitor-w: 260px;
-  --ease: cubic-bezier(0.16, 1, 0.3, 1);
-  --t-fast: 150ms var(--ease);
-  --t-med: 250ms var(--ease);
-  --t-slow: 400ms var(--ease);
+/* ── Palette ── */
+:root{
+  --bg:#0a0e17;
+  --bg-panel:#0f1420;
+  --bg-surface:#141a2a;
+  --bg-surface-2:#1a2035;
+  --bg-hover:#1e2640;
+  --border:#1e293b;
+  --border-active:#334155;
+  --text:#e2e8f0;
+  --text-muted:#94a3b8;
+  --text-faint:#475569;
+  --cyan:#22d3ee;
+  --green:#22c55e;
+  --red:#ef4444;
+  --amber:#f59e0b;
+  --purple:#a78bfa;
+  --blue:#3b82f6;
+  --tree-line:#334155;
+  --glow-cyan:0 0 20px rgba(34,211,238,0.15);
+  --glow-green:0 0 12px rgba(34,197,94,0.2);
+  --glow-red:0 0 12px rgba(239,68,68,0.2);
+  --radius:6px;
+  --font-mono:'JetBrains Mono',ui-monospace,'Cascadia Code','Fira Code',monospace;
+  --font-sans:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  --transition:200ms ease-out;
 }
 
-/* ── Dark theme ────────────────────────────────────────────── */
-[data-theme="dark"] {
-  --bg-0: #080c14;
-  --bg-1: #0f172a;
-  --bg-2: #141c32;
-  --bg-3: #1a2541;
-  --bg-4: #1e2d50;
-  --bg-hover: #243556;
-  --glass: rgba(15, 23, 42, 0.7);
-  --glass-border: rgba(148, 163, 184, 0.08);
-  --glass-2: rgba(20, 28, 50, 0.65);
-  --border-1: rgba(148, 163, 184, 0.06);
-  --border-2: rgba(148, 163, 184, 0.1);
-  --border-3: rgba(148, 163, 184, 0.18);
-  --t1: #f1f5f9;
-  --t2: #cbd5e1;
-  --t3: #94a3b8;
-  --t4: #64748b;
-  --t5: #475569;
-  --cyan: #06b6d4;
-  --cyan-2: #22d3ee;
-  --cyan-bg: rgba(6, 182, 212, 0.1);
-  --cyan-bg2: rgba(6, 182, 212, 0.06);
-  --cyan-glow: 0 0 20px rgba(6, 182, 212, 0.15);
-  --green: #22c55e;
-  --green-bg: rgba(34, 197, 94, 0.1);
-  --amber: #f59e0b;
-  --amber-bg: rgba(245, 158, 11, 0.1);
-  --red: #ef4444;
-  --red-bg: rgba(239, 68, 68, 0.1);
-  --purple: #a78bfa;
-  --purple-bg: rgba(167, 139, 250, 0.1);
-  --shadow-sm: 0 1px 3px rgba(0,0,0,0.3);
-  --shadow-md: 0 4px 20px rgba(0,0,0,0.4);
-  --shadow-lg: 0 12px 48px rgba(0,0,0,0.5);
-  color-scheme: dark;
+body{
+  min-height:100dvh;
+  font-family:var(--font-sans);
+  font-size:13px;
+  color:var(--text);
+  background:var(--bg);
+  overflow:hidden;
+  line-height:1.5;
 }
 
-/* ── Light theme ───────────────────────────────────────────── */
-[data-theme="light"] {
-  --bg-0: #f1f5f9;
-  --bg-1: #f8fafc;
-  --bg-2: #ffffff;
-  --bg-3: #f1f5f9;
-  --bg-4: #e2e8f0;
-  --bg-hover: #e2e8f0;
-  --glass: rgba(255, 255, 255, 0.75);
-  --glass-border: rgba(15, 23, 42, 0.06);
-  --glass-2: rgba(241, 245, 249, 0.7);
-  --border-1: rgba(15, 23, 42, 0.04);
-  --border-2: rgba(15, 23, 42, 0.08);
-  --border-3: rgba(15, 23, 42, 0.14);
-  --t1: #0f172a;
-  --t2: #334155;
-  --t3: #64748b;
-  --t4: #94a3b8;
-  --t5: #cbd5e1;
-  --cyan: #0891b2;
-  --cyan-2: #06b6d4;
-  --cyan-bg: rgba(8, 145, 178, 0.08);
-  --cyan-bg2: rgba(8, 145, 178, 0.04);
-  --cyan-glow: 0 0 20px rgba(8, 145, 178, 0.1);
-  --green: #16a34a;
-  --green-bg: rgba(22, 163, 74, 0.08);
-  --amber: #d97706;
-  --amber-bg: rgba(217, 119, 6, 0.08);
-  --red: #dc2626;
-  --red-bg: rgba(220, 38, 38, 0.08);
-  --purple: #7c3aed;
-  --purple-bg: rgba(124, 58, 237, 0.08);
-  --shadow-sm: 0 1px 3px rgba(0,0,0,0.04);
-  --shadow-md: 0 4px 20px rgba(0,0,0,0.06);
-  --shadow-lg: 0 12px 48px rgba(0,0,0,0.08);
-  color-scheme: light;
-}
+/* ── Scrollbar ── */
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--border-active)}
 
-html {
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  text-rendering: optimizeLegibility;
-}
-body {
-  font-family: var(--font-ui);
-  font-size: 13px;
-  color: var(--t1);
-  background: var(--bg-0);
-  line-height: 1.5;
-  overflow: hidden;
-  height: 100dvh;
-}
-button { cursor: pointer; background: none; border: none; font: inherit; color: inherit; }
-input, textarea { font: inherit; color: inherit; }
-a { color: var(--cyan); text-decoration: none; }
-
-/* Scrollbar */
-::-webkit-scrollbar { width: 5px; height: 5px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border-3); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: var(--t4); }
-
-/* ═══ Animations ═══════════════════════════════════════════════ */
-@keyframes fadeIn { from{opacity:0} to{opacity:1} }
-@keyframes slideUp { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
-@keyframes slideDown { from{opacity:0;transform:translateY(-10px)} to{opacity:1;transform:translateY(0)} }
-@keyframes slideRight { from{opacity:0;transform:translateX(-8px)} to{opacity:1;transform:translateX(0)} }
-@keyframes spin { to{transform:rotate(360deg)} }
-@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
-@keyframes progressBar { 0%{left:-35%;width:35%} 50%{left:30%;width:45%} 100%{left:100%;width:35%} }
-@keyframes glow { 0%,100%{box-shadow:0 0 4px var(--cyan)} 50%{box-shadow:0 0 12px var(--cyan),0 0 24px rgba(6,182,212,.2)} }
-@keyframes checkIn { 0%{transform:scale(0)} 50%{transform:scale(1.2)} 100%{transform:scale(1)} }
-
-.anim-in { animation: slideUp .3s var(--ease) both; }
-.anim-fade { animation: fadeIn .25s var(--ease) both; }
-
-/* ═══ Utility ══════════════════════════════════════════════════ */
-.mono { font-family: var(--font-mono); }
-.sr-only { position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0; }
-
-.spinner { width:14px;height:14px;border:2px solid var(--border-3);border-top-color:var(--cyan);border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0; }
-.spinner-xs { width:10px;height:10px;border-width:1.5px; }
-
-.dot { width:7px;height:7px;border-radius:50%;flex-shrink:0; }
-.dot-green { background:var(--green);box-shadow:0 0 5px var(--green); }
-.dot-red { background:var(--red);box-shadow:0 0 5px var(--red); }
-.dot-amber { background:var(--amber);box-shadow:0 0 5px var(--amber); }
-.dot-cyan { background:var(--cyan);box-shadow:0 0 5px var(--cyan); }
-.dot-off { background:var(--t5); }
-
-/* Pill badges */
-.pill { display:inline-flex;align-items:center;gap:3px;padding:1px 7px;border-radius:999px;font-size:10px;font-weight:600;line-height:1.7;white-space:nowrap; }
-.pill-ghost { background:var(--bg-3);color:var(--t3);border:1px solid var(--border-1); }
-.pill-cyan { background:var(--cyan-bg);color:var(--cyan); }
-.pill-green { background:var(--green-bg);color:var(--green); }
-.pill-amber { background:var(--amber-bg);color:var(--amber); }
-.pill-red { background:var(--red-bg);color:var(--red); }
-.pill-purple { background:var(--purple-bg);color:var(--purple); }
-
-/* ═══ Layout ═══════════════════════════════════════════════════ */
-#app { display:flex;flex-direction:column;height:100dvh;overflow:hidden; }
-
-/* ── HEADER ────────────────────────────────────────────────── */
-.hdr {
-  height:var(--header-h);display:flex;align-items:center;
-  padding:0 12px;gap:10px;
-  background:var(--bg-1);border-bottom:1px solid var(--border-2);
-  flex-shrink:0;z-index:100;
-}
-.hdr-left { display:flex;align-items:center;gap:8px;flex-shrink:0; }
-.logo-icon {
-  width:26px;height:26px;border-radius:7px;
-  background:linear-gradient(135deg,var(--cyan),#8b5cf6);
-  display:flex;align-items:center;justify-content:center;
-  font-size:13px;font-weight:800;color:#fff;
-  box-shadow:0 0 14px rgba(6,182,212,.25);
-}
-.logo-name { font-size:14px;font-weight:700;color:var(--t1);letter-spacing:-.02em; }
-.logo-name b { color:var(--cyan);font-weight:800; }
-.ver-badge { font-size:9px;font-weight:700;padding:1px 5px;border-radius:999px;background:var(--cyan-bg);color:var(--cyan);letter-spacing:.03em; }
-
-.hdr-center { flex:1;display:flex;align-items:center;justify-content:center;gap:14px; }
-.svc { display:flex;align-items:center;gap:4px;font-size:11px;color:var(--t4);transition:color var(--t-fast); }
-.svc:hover { color:var(--t2); }
-
-.hdr-right { display:flex;align-items:center;gap:6px;flex-shrink:0; }
-.stat-box {
-  display:flex;align-items:center;gap:4px;
-  font-family:var(--font-mono);font-size:11px;
-  padding:3px 8px;border-radius:6px;
-  background:var(--bg-3);border:1px solid var(--border-1);
-}
-.stat-box .sl { color:var(--t4);font-family:var(--font-ui);font-weight:500; }
-.stat-box .sv { color:var(--cyan);font-weight:600; }
-
-.ws-pill {
-  display:flex;align-items:center;gap:4px;
-  font-size:10px;font-weight:600;padding:3px 9px;border-radius:999px;
-}
-.ws-pill.on { background:var(--green-bg);color:var(--green); }
-.ws-pill.off { background:var(--red-bg);color:var(--red); }
-.ws-pill.try { background:var(--amber-bg);color:var(--amber); }
-
-.hdr-btn {
-  width:30px;height:30px;display:flex;align-items:center;justify-content:center;
-  border-radius:6px;color:var(--t4);transition:all var(--t-fast);
-}
-.hdr-btn:hover { background:var(--bg-hover);color:var(--t1); }
-.hdr-btn svg { width:16px;height:16px; }
-.hdr-btn.muted svg { opacity:.35; }
-
-/* ── MAIN ──────────────────────────────────────────────────── */
-.main { flex:1;display:flex;overflow:hidden;position:relative; }
-
-/* ── SYSTEM MONITOR (left) ─────────────────────────────────── */
-.mon {
-  width:var(--monitor-w);background:var(--bg-1);
-  border-right:1px solid var(--border-2);
-  display:flex;flex-direction:column;overflow:hidden;flex-shrink:0;
-  transition:width .3s var(--ease),margin .3s var(--ease);
-}
-.mon.collapsed { width:0;border-right:none;overflow:hidden; }
-
-.pan-hdr {
+/* ── Top Bar ── */
+.topbar{
+  position:fixed;top:0;left:0;right:0;height:48px;z-index:100;
   display:flex;align-items:center;justify-content:space-between;
-  padding:8px 12px;border-bottom:1px solid var(--border-1);flex-shrink:0;
+  padding:0 16px;
+  background:linear-gradient(180deg,rgba(15,20,32,0.98),rgba(10,14,23,0.95));
+  border-bottom:1px solid var(--border);
+  backdrop-filter:blur(12px);
 }
-.pan-title { font-size:10px;font-weight:700;color:var(--t4);text-transform:uppercase;letter-spacing:.07em; }
-.pan-btn { width:22px;height:22px;display:flex;align-items:center;justify-content:center;border-radius:5px;color:var(--t4);transition:all var(--t-fast); }
-.pan-btn:hover { background:var(--bg-hover);color:var(--t1); }
-
-.mon-body { flex:1;overflow-y:auto;padding:8px; display:flex;flex-direction:column;gap:8px; }
-.mon-card { background:var(--bg-2);border:1px solid var(--border-1);border-radius:8px;padding:10px; }
-.mon-card-title { font-size:10px;font-weight:700;color:var(--t4);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px; }
-.mon-row { display:flex;align-items:center;justify-content:space-between;padding:3px 0;font-size:11px; }
-.mon-row .mk { color:var(--t4); }
-.mon-row .mv { color:var(--t2);font-family:var(--font-mono);font-weight:500;font-size:11px; }
-
-.task-item {
-  display:flex;align-items:center;gap:6px;padding:5px 6px;border-radius:6px;font-size:11px;cursor:default;transition:background var(--t-fast);
+.topbar-left{display:flex;align-items:center;gap:10px}
+.topbar-brand{
+  font-family:var(--font-mono);font-size:14px;font-weight:600;
+  color:var(--cyan);
+  text-shadow:0 0 10px rgba(34,211,238,0.3),0 0 40px rgba(34,211,238,0.1);
+  letter-spacing:-0.02em;
 }
-.task-item:hover { background:var(--bg-hover); }
-.task-item .tt { flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--t3); }
-.task-item .tm { font-family:var(--font-mono);font-size:10px;color:var(--t4);white-space:nowrap; }
+.topbar-brand span{color:var(--text-faint);font-weight:400;font-size:11px;margin-left:4px}
+.topbar-center{display:flex;align-items:center;gap:16px}
+.status-item{display:flex;align-items:center;gap:6px;font-size:11px;font-family:var(--font-mono);color:var(--text-muted)}
+.status-dot{
+  width:8px;height:8px;border-radius:50%;
+  background:var(--text-faint);
+  transition:background var(--transition),box-shadow var(--transition);
+}
+.status-dot.ok{background:var(--green);box-shadow:var(--glow-green)}
+.status-dot.err{background:var(--red);box-shadow:var(--glow-red)}
+.status-dot.warn{background:var(--amber)}
+.topbar-right{display:flex;align-items:center;gap:16px;font-family:var(--font-mono);font-size:11px}
+.stat-pill{display:flex;align-items:center;gap:4px;color:var(--text-muted)}
+.stat-pill .val{color:var(--text);font-weight:500}
+.ws-indicator{display:flex;align-items:center;gap:5px}
+.ws-dot{width:6px;height:6px;border-radius:50%;background:var(--text-faint);transition:all var(--transition)}
+.ws-dot.connected{background:var(--cyan);box-shadow:0 0 8px rgba(34,211,238,0.4);animation:pulse-ws 2s ease-in-out infinite}
+.ws-dot.reconnecting{background:var(--amber);animation:pulse-ws 1s ease-in-out infinite}
+@keyframes pulse-ws{0%,100%{opacity:1}50%{opacity:0.4}}
 
-/* ── CHAT (center) ─────────────────────────────────────────── */
-.chat { flex:1;display:flex;flex-direction:column;min-width:0;overflow:hidden; }
+/* ── Layout ── */
+.main{display:flex;height:calc(100dvh - 48px);margin-top:48px}
+.panel-left{
+  width:35%;min-width:300px;max-width:500px;
+  display:flex;flex-direction:column;
+  border-right:1px solid var(--border);
+  background:var(--bg-panel);
+}
+.panel-right{
+  flex:1;display:flex;flex-direction:column;
+  background:var(--bg);
+  overflow:hidden;
+}
 
-.chat-scroll {
+/* ── Chat Panel ── */
+.chat-header{
+  padding:10px 16px;
+  border-bottom:1px solid var(--border);
+  font-family:var(--font-mono);font-size:12px;
+  color:var(--text-muted);
+  display:flex;align-items:center;justify-content:space-between;
+}
+.chat-header-actions{display:flex;gap:8px}
+.icon-btn{
+  width:30px;height:30px;display:flex;align-items:center;justify-content:center;
+  border-radius:var(--radius);color:var(--text-muted);cursor:pointer;
+  border:none;background:none;
+  transition:all var(--transition);
+}
+.icon-btn:hover{background:var(--bg-hover);color:var(--text)}
+.icon-btn.active{color:var(--cyan)}
+.chat-messages{
   flex:1;overflow-y:auto;overflow-x:hidden;
-  padding:16px 24px;
-  display:flex;flex-direction:column;gap:16px;
+  padding:12px;
+  display:flex;flex-direction:column;gap:8px;
+}
+.msg{
+  max-width:92%;padding:10px 14px;
+  border-radius:10px;
+  font-size:13px;line-height:1.55;
+  animation:msg-in 250ms ease-out;
+  word-wrap:break-word;
+  overflow-wrap:break-word;
+}
+@keyframes msg-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.msg.user{
+  align-self:flex-end;
+  background:var(--bg-surface-2);
+  border:1px solid var(--border);
+  border-bottom-right-radius:3px;
+}
+.msg.system{
+  align-self:flex-start;
+  background:var(--bg-surface);
+  border:1px solid rgba(30,41,59,0.5);
+  border-bottom-left-radius:3px;
+}
+.msg.system .md-content h1,.msg.system .md-content h2,.msg.system .md-content h3{
+  font-family:var(--font-mono);color:var(--cyan);margin:12px 0 6px;font-size:13px;font-weight:600;
+}
+.msg.system .md-content h1:first-child,.msg.system .md-content h2:first-child,.msg.system .md-content h3:first-child{margin-top:0}
+.msg.system .md-content p{margin:4px 0}
+.msg.system .md-content ul,.msg.system .md-content ol{padding-left:18px;margin:4px 0}
+.msg.system .md-content li{margin:2px 0}
+.msg.system .md-content code{
+  font-family:var(--font-mono);font-size:12px;
+  background:rgba(34,211,238,0.08);color:var(--cyan);
+  padding:1px 5px;border-radius:3px;
+}
+.msg.system .md-content pre{
+  background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);
+  padding:10px;margin:8px 0;overflow-x:auto;
+}
+.msg.system .md-content pre code{background:none;padding:0;color:var(--text)}
+.msg.system .md-content a{color:var(--cyan);text-decoration:underline}
+.msg.system .md-content strong{color:var(--text);font-weight:600}
+.msg.system .md-content blockquote{border-left:3px solid var(--cyan);padding-left:10px;color:var(--text-muted);margin:8px 0}
+.msg-meta{
+  display:flex;flex-wrap:wrap;gap:4px;margin-top:8px;
+}
+.meta-pill{
+  display:inline-flex;align-items:center;gap:3px;
+  padding:2px 7px;border-radius:9999px;
+  font-family:var(--font-mono);font-size:10px;
+  background:rgba(34,211,238,0.06);
+  border:1px solid rgba(34,211,238,0.12);
+  color:var(--cyan);
+}
+.meta-pill.green{background:rgba(34,197,94,0.06);border-color:rgba(34,197,94,0.12);color:var(--green)}
+.meta-pill.amber{background:rgba(245,158,11,0.06);border-color:rgba(245,158,11,0.12);color:var(--amber)}
+.meta-pill.purple{background:rgba(167,139,250,0.06);border-color:rgba(167,139,250,0.12);color:var(--purple)}
+
+/* ── Chat Input ── */
+.chat-input-area{
+  padding:10px 12px;
+  border-top:1px solid var(--border);
+  background:var(--bg-panel);
+}
+.input-row{
+  display:flex;align-items:flex-end;gap:8px;
+  background:var(--bg-surface);
+  border:1px solid var(--border);
+  border-radius:10px;
+  padding:6px 8px 6px 12px;
+  transition:border-color var(--transition);
+}
+.input-row:focus-within{border-color:var(--cyan)}
+.input-row textarea{
+  flex:1;resize:none;
+  border:none;outline:none;
+  background:none;color:var(--text);
+  font-family:var(--font-sans);font-size:13px;
+  line-height:1.5;
+  max-height:120px;min-height:20px;
+  padding:4px 0;
+}
+.input-row textarea::placeholder{color:var(--text-faint)}
+.input-btn{
+  width:32px;height:32px;
+  display:flex;align-items:center;justify-content:center;
+  border:none;border-radius:8px;
+  cursor:pointer;color:var(--text-muted);
+  background:none;
+  transition:all var(--transition);
+  flex-shrink:0;
+}
+.input-btn:hover{color:var(--text);background:var(--bg-hover)}
+.input-btn.send{color:var(--bg);background:var(--cyan);border-radius:8px}
+.input-btn.send:hover{background:#06b6d4}
+.input-btn.send:disabled{opacity:0.4;cursor:default}
+.file-label{display:flex;align-items:center;justify-content:center;width:32px;height:32px;cursor:pointer;color:var(--text-muted);border-radius:8px;transition:all var(--transition)}
+.file-label:hover{color:var(--text);background:var(--bg-hover)}
+.file-info{font-size:11px;color:var(--amber);padding:4px 0 0 4px;font-family:var(--font-mono)}
+
+/* ── Trace Panel ── */
+.trace-header{
+  padding:10px 16px;
+  border-bottom:1px solid var(--border);
+  font-family:var(--font-mono);font-size:12px;
+  color:var(--text-muted);
+  display:flex;align-items:center;justify-content:space-between;
+  background:var(--bg-panel);
+}
+.trace-actions{display:flex;gap:6px;align-items:center}
+.trace-scroll{
+  flex:1;overflow-y:auto;overflow-x:hidden;
+  padding:16px;
   scroll-behavior:smooth;
+  background-image:
+    repeating-linear-gradient(0deg,transparent,transparent 23px,rgba(34,211,238,0.015) 23px,rgba(34,211,238,0.015) 24px);
 }
 
-/* Empty state */
-.empty {
-  flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
-  gap:20px;padding:32px;text-align:center;
+/* ── Task Block ── */
+.task-block{
+  margin-bottom:20px;
+  animation:task-in 300ms ease-out;
 }
-.empty-icon {
-  width:56px;height:56px;border-radius:14px;
-  background:linear-gradient(135deg,var(--cyan),#8b5cf6);
-  display:flex;align-items:center;justify-content:center;
-  font-size:24px;font-weight:900;color:#fff;
-  box-shadow:0 0 40px rgba(6,182,212,.2),0 0 80px rgba(139,92,246,.1);
+@keyframes task-in{from{opacity:0;transform:translateX(-12px)}to{opacity:1;transform:translateX(0)}}
+.task-header{
+  display:flex;align-items:center;gap:8px;
+  margin-bottom:10px;
+  padding-bottom:8px;
+  border-bottom:1px solid var(--border);
 }
-.empty h2 { font-size:18px;font-weight:700;color:var(--t1); }
-.empty p { font-size:13px;color:var(--t4);max-width:380px;line-height:1.6; }
-.chips { display:flex;flex-wrap:wrap;gap:8px;justify-content:center;max-width:520px; }
-.chip {
-  padding:7px 14px;border-radius:999px;font-size:12px;font-weight:500;
-  color:var(--t3);border:1px solid var(--border-2);background:var(--bg-2);
-  transition:all var(--t-fast);cursor:pointer;white-space:nowrap;
+.task-header .task-icon{font-size:14px}
+.task-header .task-title{
+  font-family:var(--font-mono);font-size:12px;font-weight:500;
+  color:var(--text);
+  flex:1;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
-.chip:hover { border-color:var(--cyan);color:var(--cyan);background:var(--cyan-bg);box-shadow:var(--cyan-glow); }
-
-/* Messages */
-.msg { display:flex;gap:10px;max-width:680px;width:100%;animation:slideUp .3s var(--ease) both; }
-.msg.user { margin-left:auto;flex-direction:row-reverse; }
-.msg.sys { margin-right:auto; }
-
-.msg-av {
-  width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;
-  font-size:11px;font-weight:700;flex-shrink:0;margin-top:2px;
-}
-.msg-av.uav { background:var(--bg-4);color:var(--t3);border:1px solid var(--border-2); }
-.msg-av.sav { background:linear-gradient(135deg,var(--cyan),#8b5cf6);color:#fff; }
-
-.msg-body { flex:1;min-width:0; }
-.bubble {
-  padding:10px 14px;border-radius:14px;font-size:13px;line-height:1.65;
-  word-wrap:break-word;overflow-wrap:break-word;
-}
-.msg.user .bubble {
-  background:var(--bg-3);border:1px solid var(--border-2);border-top-right-radius:4px;
-}
-.msg.sys .bubble {
-  background:var(--glass);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
-  border:1px solid var(--glass-border);border-top-left-radius:4px;
+.task-header .task-id{
+  font-family:var(--font-mono);font-size:10px;
+  color:var(--text-faint);
+  flex-shrink:0;
 }
 
-/* Uploaded files in messages */
-.msg-files { display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px; }
-.msg-file-thumb {
-  width:80px;height:80px;border-radius:8px;object-fit:cover;
-  border:1px solid var(--border-2);cursor:pointer;transition:transform var(--t-fast);
-}
-.msg-file-thumb:hover { transform:scale(1.05); }
-.msg-file-vid {
-  width:220px;border-radius:8px;border:1px solid var(--border-2);
-  background:#000;
-}
-.msg-file-doc {
-  display:flex;align-items:center;gap:6px;padding:6px 10px;
-  border-radius:8px;background:var(--bg-3);border:1px solid var(--border-1);
-  font-size:11px;color:var(--t3);
-}
-.msg-file-doc svg { width:14px;height:14px;color:var(--t4);flex-shrink:0; }
+/* ── Tree ── */
+.tree{position:relative;padding-left:0}
+.tree-section{position:relative;margin-bottom:2px}
+.tree-section:last-child .tree-vline{display:none}
 
-/* Markdown in messages */
-.bubble h1,.bubble h2,.bubble h3 { margin:10px 0 6px;font-weight:600;line-height:1.3; }
-.bubble h1 { font-size:16px; }
-.bubble h2 { font-size:14px; }
-.bubble h3 { font-size:13px; }
-.bubble p { margin-bottom:8px; }
-.bubble p:last-child { margin-bottom:0; }
-.bubble ul,.bubble ol { margin:6px 0;padding-left:18px; }
-.bubble li { margin-bottom:3px; }
-.bubble code {
-  font-family:var(--font-mono);font-size:.9em;
-  background:var(--bg-4);padding:1px 5px;border-radius:4px;border:1px solid var(--border-1);
+.tree-node{
+  position:relative;
+  padding:6px 0 6px 24px;
+  animation:node-in 250ms ease-out;
 }
-.bubble pre { margin:10px 0;border-radius:10px;overflow:hidden;border:1px solid var(--border-1); }
-.bubble pre code {
-  display:block;padding:12px;font-size:11px;line-height:1.65;
-  overflow-x:auto;background:var(--bg-0);border:none;
-}
-.bubble a { color:var(--cyan);text-decoration:underline;text-underline-offset:2px; }
-.bubble strong { font-weight:600;color:var(--t1); }
-.bubble blockquote {
-  border-left:3px solid var(--cyan);padding:6px 10px;margin:8px 0;
-  color:var(--t3);background:var(--cyan-bg2);border-radius:0 6px 6px 0;
-}
-.bubble table { font-size:12px;border-collapse:collapse;width:100%;margin:8px 0; }
-.bubble th,.bubble td { padding:5px 8px;border:1px solid var(--border-2);text-align:left; }
-.bubble th { background:var(--bg-3);font-weight:600; }
+@keyframes node-in{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:translateX(0)}}
 
-/* Response metadata */
-.msg-meta { display:flex;flex-wrap:wrap;gap:5px;margin-top:8px; }
-.meta-pill {
-  display:inline-flex;align-items:center;gap:3px;padding:1px 7px;border-radius:999px;
-  font-size:10px;font-weight:500;font-family:var(--font-mono);
-  background:var(--bg-3);color:var(--t4);border:1px solid var(--border-1);
+/* Vertical + horizontal branch lines */
+.tree-node::before{
+  content:'';position:absolute;left:7px;top:0;bottom:0;
+  width:1px;background:var(--tree-line);
 }
-.meta-pill .ml { color:var(--t5);font-family:var(--font-ui);font-weight:500; }
-
-/* Typing dots */
-.typing { display:flex;gap:4px;padding:10px 14px; }
-.typing i { width:5px;height:5px;border-radius:50%;background:var(--t4);animation:pulse 1.2s ease-in-out infinite;display:block; }
-.typing i:nth-child(2) { animation-delay:.15s; }
-.typing i:nth-child(3) { animation-delay:.3s; }
-
-/* ── INPUT BAR ─────────────────────────────────────────────── */
-.input-area { padding:8px 24px 14px;flex-shrink:0; }
-
-/* File preview strip */
-.file-preview { display:flex;gap:6px;padding-bottom:6px;flex-wrap:wrap; }
-.file-preview:empty { display:none; }
-.file-thumb-wrap { position:relative; }
-.file-thumb-img {
-  width:48px;height:48px;border-radius:6px;object-fit:cover;
-  border:1px solid var(--border-2);
+.tree-node:last-child::before{bottom:50%}
+.tree-node::after{
+  content:'';position:absolute;left:7px;top:50%;
+  width:14px;height:1px;background:var(--tree-line);
 }
-.file-thumb-name {
-  display:flex;align-items:center;gap:4px;padding:4px 8px;border-radius:6px;
-  background:var(--bg-3);border:1px solid var(--border-1);font-size:10px;color:var(--t3);max-width:120px;
-}
-.file-thumb-name span { overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
-.file-remove {
-  position:absolute;top:-4px;right:-4px;width:16px;height:16px;border-radius:50%;
-  background:var(--red);color:#fff;display:flex;align-items:center;justify-content:center;
-  font-size:9px;font-weight:700;line-height:1;cursor:pointer;
-  opacity:0;transition:opacity var(--t-fast);
-}
-.file-thumb-wrap:hover .file-remove { opacity:1; }
+.tree-node.active::before,.tree-node.active::after{background:var(--cyan);box-shadow:0 0 6px rgba(34,211,238,0.4)}
+.tree-node.active .node-header{background:rgba(34,211,238,0.04)}
+.tree-node.done::before,.tree-node.done::after{background:var(--green)}
+.tree-node.error::before,.tree-node.error::after{background:var(--red)}
 
-.input-wrap {
-  display:flex;align-items:flex-end;gap:6px;
-  background:var(--bg-2);border:1px solid var(--border-2);border-radius:14px;
-  padding:6px 8px;transition:border-color var(--t-fast),box-shadow var(--t-fast);
-}
-.input-wrap:focus-within { border-color:var(--cyan);box-shadow:0 0 0 3px var(--cyan-bg),var(--cyan-glow); }
-
-.attach-btn {
-  display:flex;align-items:center;justify-content:center;
-  width:32px;height:32px;border-radius:8px;color:var(--t4);flex-shrink:0;
-  transition:all var(--t-fast);
-}
-.attach-btn:hover { background:var(--bg-hover);color:var(--t2); }
-.attach-btn svg { width:17px;height:17px; }
-
-#chatInput {
-  flex:1;resize:none;border:none;outline:none;
-  background:transparent;color:var(--t1);
-  font-size:13px;line-height:1.5;padding:5px 4px;
-  min-height:22px;max-height:140px;
-}
-#chatInput::placeholder { color:var(--t5); }
-
-.send-btn {
-  width:32px;height:32px;border-radius:8px;
-  background:var(--cyan);color:#fff;
-  display:flex;align-items:center;justify-content:center;
-  flex-shrink:0;transition:all var(--t-fast);
-}
-.send-btn:hover { background:#0891b2;box-shadow:0 0 14px rgba(6,182,212,.3); }
-.send-btn:active { transform:scale(.94); }
-.send-btn:disabled { opacity:.3;cursor:not-allowed;box-shadow:none; }
-.send-btn svg { width:16px;height:16px; }
-
-.input-hint { text-align:center;padding-top:4px;font-size:10px;color:var(--t5); }
-.input-hint kbd {
-  font-size:9px;font-weight:600;padding:1px 4px;border-radius:3px;
-  background:var(--bg-3);border:1px solid var(--border-2);color:var(--t4);font-family:var(--font-ui);
-}
-
-/* ═══ TRACE PANEL (right) ══════════════════════════════════════
-   Langfuse-style nested trace tree + Manus-style todo.md
-   ═══════════════════════════════════════════════════════════════ */
-.trace {
-  width:var(--trace-w);background:var(--bg-1);
-  border-left:1px solid var(--border-2);
-  display:flex;flex-direction:column;overflow:hidden;flex-shrink:0;
-  transition:width .3s var(--ease);
-}
-.trace.collapsed { width:0;border-left:none;overflow:hidden;pointer-events:none; }
-@media(max-width:768px) { .trace.collapsed { pointer-events:none; } }
-
-/* Trace header with cost/token totals */
-.trace-hdr {
+.node-header{
   display:flex;align-items:center;gap:6px;
-  padding:8px 12px;border-bottom:1px solid var(--border-1);flex-shrink:0;
+  font-family:var(--font-mono);font-size:12px;
+  cursor:pointer;
+  padding:4px 8px;
+  border-radius:var(--radius);
+  transition:background var(--transition);
 }
-.trace-hdr .pan-title { flex:1; }
-.trace-totals { display:flex;gap:6px; }
-.trace-total {
-  font-family:var(--font-mono);font-size:10px;font-weight:600;
-  padding:1px 6px;border-radius:4px;background:var(--bg-3);
+.node-header:hover{background:var(--bg-hover)}
+.node-icon{font-size:13px;flex-shrink:0;width:18px;text-align:center}
+.node-label{font-weight:500;color:var(--text)}
+.node-detail{color:var(--text-faint);font-size:11px;font-weight:400}
+.node-timer{
+  margin-left:auto;font-size:11px;font-weight:600;
+  font-variant-numeric:tabular-nums;
+  color:var(--cyan);
+  flex-shrink:0;
 }
-.trace-total.cost { color:var(--cyan); }
-.trace-total.tok { color:var(--t3); }
+.node-timer.done{color:var(--green)}
+.node-timer.error{color:var(--red)}
 
-.trace-body { flex:1;overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:2px; }
-
-/* Trace empty */
-.trace-empty {
-  flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
-  gap:10px;color:var(--t5);text-align:center;padding:32px;
+.node-tags{display:flex;gap:4px;flex-shrink:0;margin-left:4px}
+.node-tag{
+  padding:1px 6px;border-radius:9999px;
+  font-size:9px;font-weight:500;letter-spacing:0.02em;
+  text-transform:uppercase;
 }
-.trace-empty-ico {
-  width:36px;height:36px;border-radius:10px;background:var(--bg-3);border:1px solid var(--border-1);
-  display:flex;align-items:center;justify-content:center;font-size:16px;
-}
-.trace-empty p { font-size:12px;line-height:1.5; }
+.node-tag.tool{background:rgba(167,139,250,0.1);color:var(--purple);border:1px solid rgba(167,139,250,0.15)}
+.node-tag.cloud{background:rgba(59,130,246,0.1);color:var(--blue);border:1px solid rgba(59,130,246,0.15)}
+.node-tag.uncensored{background:rgba(239,68,68,0.1);color:var(--red);border:1px solid rgba(239,68,68,0.15)}
+.node-tag.local{background:rgba(34,197,94,0.1);color:var(--green);border:1px solid rgba(34,197,94,0.15)}
 
-/* ── Trace Tree Node ───────────────────────────────────────── */
-.tnode {
-  border-radius:8px;overflow:hidden;
-  animation:slideUp .3s var(--ease) both;
+/* Progress bar */
+.progress-bar{
+  height:3px;border-radius:2px;
+  background:var(--border);
+  margin:4px 8px 2px 8px;
+  overflow:hidden;
 }
-.tnode + .tnode { margin-top:2px; }
-
-/* Node header row (clickable to expand) */
-.tnode-hdr {
-  display:flex;align-items:center;gap:6px;
-  padding:6px 8px;cursor:pointer;border-radius:8px;
-  transition:background var(--t-fast);
+.progress-fill{
+  height:100%;border-radius:2px;
+  background:var(--cyan);
+  transition:width 300ms ease-out;
   position:relative;
 }
-.tnode-hdr:hover { background:var(--bg-hover); }
+.progress-fill.pulsing::after{
+  content:'';position:absolute;inset:0;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,0.3),transparent);
+  animation:shimmer 1.5s ease-in-out infinite;
+}
+@keyframes shimmer{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
+.progress-fill.done{background:var(--green)}
+.progress-fill.error{background:var(--red)}
 
-/* Nesting: indentation with tree lines */
-.tnode { position:relative; }
-.tnode[data-depth="1"] > .tnode-hdr { padding-left:24px; }
-.tnode[data-depth="2"] > .tnode-hdr { padding-left:44px; }
-.tnode[data-depth="1"]::before {
-  content:'';position:absolute;left:16px;top:0;bottom:0;width:1px;background:var(--border-2);
-  pointer-events:none;
+/* Sub-results */
+.sub-results{
+  padding:4px 0 2px 28px;
+  font-family:var(--font-mono);font-size:11px;
 }
-.tnode[data-depth="1"]:last-child::before { bottom:50%; }
-.tnode[data-depth="1"]::after {
-  content:'';position:absolute;left:16px;top:17px;width:6px;height:1px;background:var(--border-2);
-  pointer-events:none;
+.sub-results.collapsed{display:none}
+.sub-result{
+  padding:2px 8px;
+  color:var(--text-muted);
+  position:relative;
+  animation:sub-in 200ms ease-out;
+  line-height:1.6;
 }
-.tnode[data-depth="2"]::before {
-  content:'';position:absolute;left:32px;top:0;bottom:0;width:1px;background:var(--border-2);
-  pointer-events:none;
+@keyframes sub-in{from{opacity:0;transform:translateX(-6px)}to{opacity:1;transform:translateX(0)}}
+.sub-result::before{
+  content:'';position:absolute;left:-17px;top:0;bottom:0;
+  width:1px;background:var(--tree-line);
 }
-.tnode[data-depth="2"]::after {
-  content:'';position:absolute;left:32px;top:17px;width:6px;height:1px;background:var(--border-2);
-  pointer-events:none;
+.sub-result:last-child::before{bottom:50%}
+.sub-result::after{
+  content:'';position:absolute;left:-17px;top:50%;
+  width:10px;height:1px;background:var(--tree-line);
+}
+.sub-result .sr-icon{margin-right:4px}
+.sr-ok{color:var(--green)}
+.sr-wait{color:var(--amber)}
+.sr-err{color:var(--red)}
+.sr-info{color:var(--blue)}
+
+/* ── Planner section ── */
+.plan-section{
+  padding:6px 0 6px 24px;
+  position:relative;
+  animation:node-in 250ms ease-out;
+}
+.plan-section::before{
+  content:'';position:absolute;left:7px;top:0;bottom:0;
+  width:1px;background:var(--tree-line);
+}
+.plan-label{
+  font-family:var(--font-mono);font-size:12px;font-weight:500;
+  display:flex;align-items:center;gap:6px;
+  padding:4px 8px;
+}
+.plan-label .plan-icon{font-size:14px}
+.plan-label .plan-model{color:var(--text-faint);font-size:11px;font-weight:400}
+.plan-label .plan-time{color:var(--amber);font-size:11px;margin-left:auto}
+.plan-agents{padding:4px 0 0 28px}
+.plan-agent{
+  font-family:var(--font-mono);font-size:11px;color:var(--text-muted);
+  padding:1px 0;
+  position:relative;
+}
+.plan-agent::before{
+  content:'├';color:var(--tree-line);margin-right:6px;
+}
+.plan-agent:last-child::before{content:'└'}
+
+/* ── Complete Footer ── */
+.task-complete{
+  display:flex;align-items:center;gap:8px;
+  padding:8px 12px;margin-top:4px;
+  font-family:var(--font-mono);font-size:11px;
+  background:rgba(34,197,94,0.04);
+  border:1px solid rgba(34,197,94,0.1);
+  border-radius:var(--radius);
+  color:var(--green);
+  animation:node-in 300ms ease-out;
+}
+.task-complete .tc-stat{color:var(--text-muted);margin-left:8px}
+.task-complete .tc-val{color:var(--text);font-weight:500}
+
+/* ── Empty State ── */
+.empty-state{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  height:100%;color:var(--text-faint);
+  font-family:var(--font-mono);font-size:12px;
+  gap:8px;
+  text-align:center;
+  padding:20px;
+}
+.empty-state .empty-icon{font-size:32px;opacity:0.3}
+.empty-state .empty-text{max-width:260px;line-height:1.6}
+
+/* ── Mobile ── */
+@media(max-width:768px){
+  .main{flex-direction:column}
+  .panel-left{width:100%;max-width:none;min-width:0;height:50%;border-right:none;border-bottom:1px solid var(--border)}
+  .panel-right{height:50%}
+  .topbar-center{display:none}
 }
 
-/* Expand/collapse chevron */
-.tnode-chev {
-  width:14px;height:14px;display:flex;align-items:center;justify-content:center;
-  color:var(--t4);transition:transform var(--t-fast);flex-shrink:0;
-}
-.tnode-chev svg { width:10px;height:10px; }
-.tnode.open > .tnode-hdr .tnode-chev { transform:rotate(90deg); }
-
-/* Status icon (checkbox style like Manus todo.md) */
-.tnode-status {
-  width:16px;height:16px;border-radius:4px;display:flex;align-items:center;justify-content:center;
-  font-size:9px;flex-shrink:0;border:1.5px solid var(--border-3);color:transparent;
-  transition:all var(--t-fast);
-}
-.tnode.st-run .tnode-status { border-color:var(--cyan);background:var(--cyan-bg); }
-.tnode.st-run .tnode-status::after { content:'';width:8px;height:8px;border:1.5px solid var(--cyan);border-top-color:transparent;border-radius:50%;animation:spin .7s linear infinite; }
-.tnode.st-done .tnode-status {
-  border-color:var(--green);background:var(--green);color:#fff;
-  animation:checkIn .3s var(--ease);
-}
-.tnode.st-err .tnode-status { border-color:var(--red);background:var(--red);color:#fff; }
-.tnode.st-queue .tnode-status { border-color:var(--t5);background:var(--bg-3); }
-
-/* Node label */
-.tnode-label { flex:1;min-width:0;font-size:12px;font-weight:500;color:var(--t2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
-.tnode.st-run .tnode-label { color:var(--cyan); }
-.tnode.st-done .tnode-label { color:var(--t2); }
-.tnode.st-err .tnode-label { color:var(--red); }
-
-/* Node metadata badges (right side) */
-.tnode-meta { display:flex;align-items:center;gap:4px;flex-shrink:0; }
-.tnode-badge {
-  font-family:var(--font-mono);font-size:9px;font-weight:600;
-  padding:1px 5px;border-radius:4px;white-space:nowrap;
-}
-.tnode-badge.model { background:var(--purple-bg);color:var(--purple); }
-.tnode-badge.tok { background:var(--bg-3);color:var(--t4); }
-.tnode-badge.cost { background:var(--cyan-bg);color:var(--cyan); }
-.tnode-badge.time { background:var(--bg-3);color:var(--t3); }
-.tnode-badge.prov-cloud { background:var(--cyan-bg);color:var(--cyan); }
-.tnode-badge.prov-local { background:var(--amber-bg);color:var(--amber); }
-.tnode-badge.uncensored { background:var(--purple-bg);color:var(--purple); }
-
-/* Node children container */
-.tnode-kids { display:none;padding-left:0; }
-.tnode.open > .tnode-kids { display:block; }
-
-/* Node expandable output */
-.tnode-output {
-  max-height:0;overflow:hidden;transition:max-height .3s var(--ease);
-}
-.tnode-output.open { max-height:500px;overflow-y:auto; }
-.tnode-output-inner {
-  padding:8px 10px 8px 38px;font-size:11px;line-height:1.6;
-  color:var(--t3);font-family:var(--font-mono);white-space:pre-wrap;word-break:break-word;
-  border-top:1px solid var(--border-1);background:var(--bg-0);border-radius:0 0 8px 8px;
-  margin:0 4px 4px;
-}
-.tnode[data-depth="1"] .tnode-output-inner { padding-left:26px;margin-left:24px; }
-.tnode[data-depth="2"] .tnode-output-inner { padding-left:26px;margin-left:44px; }
-
-/* ── Trace Summary ─────────────────────────────────────────── */
-.trace-summary {
-  margin-top:4px;padding:8px 10px;border-radius:8px;font-size:11px;font-weight:500;
-  display:flex;align-items:center;gap:6px;flex-wrap:wrap;
-  animation:slideUp .3s var(--ease) both;
-}
-.trace-summary.ok { background:var(--green-bg);color:var(--green); }
-.trace-summary.fail { background:var(--red-bg);color:var(--red); }
-.trace-summary .sep { color:var(--border-3); }
-
-/* ── Toggle buttons (collapsed panels) ─────────────────────── */
-.tog {
-  position:absolute;top:8px;z-index:50;width:28px;height:28px;
-  border-radius:6px;background:var(--bg-2);border:1px solid var(--border-2);
-  color:var(--t4);display:none;align-items:center;justify-content:center;
-  transition:all var(--t-fast);box-shadow:var(--shadow-sm);
-}
-.tog:hover { background:var(--bg-hover);color:var(--t1); }
-.tog.show { display:flex; }
-.tog-l { left:8px; }
-.tog-r { right:8px; }
-.tog svg { width:14px;height:14px; }
-
-/* ═══ FILE GALLERY MODAL ═══════════════════════════════════════ */
-.modal-overlay {
-  position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.6);
-  display:none;align-items:center;justify-content:center;
-  backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);
-}
-.modal-overlay.show { display:flex; }
-.modal {
-  background:var(--bg-2);border:1px solid var(--border-2);border-radius:14px;
-  width:90%;max-width:640px;max-height:80vh;overflow:hidden;
-  box-shadow:var(--shadow-lg);animation:slideUp .3s var(--ease) both;
-  display:flex;flex-direction:column;
-}
-.modal-hdr {
-  display:flex;align-items:center;justify-content:space-between;
-  padding:12px 16px;border-bottom:1px solid var(--border-1);
-}
-.modal-hdr h3 { font-size:14px;font-weight:700; }
-.modal-close { width:28px;height:28px;border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--t4);transition:all var(--t-fast); }
-.modal-close:hover { background:var(--bg-hover);color:var(--t1); }
-.modal-body { flex:1;overflow-y:auto;padding:12px; }
-
-.file-grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px; }
-.file-card {
-  border-radius:8px;overflow:hidden;border:1px solid var(--border-1);
-  background:var(--bg-3);cursor:pointer;transition:all var(--t-fast);
-}
-.file-card:hover { border-color:var(--cyan);box-shadow:var(--cyan-glow); }
-.file-card img { width:100%;height:80px;object-fit:cover; }
-.file-card-info { padding:6px 8px;font-size:10px;color:var(--t3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
-.file-card-size { font-family:var(--font-mono);color:var(--t4); }
-
-/* ═══ RESPONSIVE ═══════════════════════════════════════════════ */
-@media(max-width:1100px) {
-  .mon { display:none; }
-  .tog-l { display:none!important; }
-  :root { --trace-w:340px; }
-}
-@media(max-width:768px) {
-  .hdr-center { display:none; }
-  .stat-box { display:none; }
-  .trace {
-    position:absolute;top:0;right:0;bottom:0;width:100%;max-width:380px;
-    z-index:80;box-shadow:var(--shadow-lg);
-    transition:transform .3s var(--ease),width .3s var(--ease);
-  }
-  .trace.collapsed { transform:translateX(100%);width:100%;max-width:380px; }
-  .tog-r { display:flex!important; }
-  .chat-scroll { padding:12px 14px; }
-  .input-area { padding:6px 14px 10px; }
-  .msg { max-width:100%; }
-}
-@media(max-width:480px) {
-  .logo-name { display:none; }
-  .ver-badge { display:none; }
-}
+/* ── Utility ── */
+.hidden{display:none!important}
+.auto-scroll-active .trace-scroll{scroll-behavior:smooth}
 </style>
 </head>
 <body>
 
-<div id="app">
-<!-- ═══ HEADER ══════════════════════════════════════════════════ -->
-<header class="hdr">
-  <div class="hdr-left">
-    <div class="logo-icon">N</div>
-    <span class="logo-name">NCore <b>Genesis</b></span>
-    <span class="ver-badge">v6.0</span>
+<!-- ══ TOP BAR ══ -->
+<header class="topbar">
+  <div class="topbar-left">
+    <div class="topbar-brand">NCore Genesis<span>v6.0</span></div>
   </div>
-  <div class="hdr-center" id="statusBar">
-    <div class="svc"><span class="dot dot-off" id="d-gw"></span> Gateway</div>
-    <div class="svc"><span class="dot dot-off" id="d-ll"></span> llama-server</div>
-    <div class="svc"><span class="dot dot-off" id="d-rd"></span> Redis</div>
-    <div class="svc"><span class="dot dot-off" id="d-or"></span> OpenRouter</div>
+  <div class="topbar-center">
+    <div class="status-item"><div class="status-dot" id="dot-gateway"></div>Gateway</div>
+    <div class="status-item"><div class="status-dot" id="dot-llama"></div>llama-server</div>
+    <div class="status-item"><div class="status-dot" id="dot-redis"></div>Redis</div>
+    <div class="status-item"><div class="status-dot" id="dot-openrouter"></div>OpenRouter</div>
   </div>
-  <div class="hdr-right">
-    <div class="stat-box"><span class="sl">Cost</span><span class="sv" id="gCost">$0.0000</span></div>
-    <div class="stat-box"><span class="sl">Tokens</span><span class="sv" id="gTok">0</span></div>
-    <div class="ws-pill off" id="wsBadge"><span class="dot dot-red" style="width:5px;height:5px;box-shadow:none"></span><span>Offline</span></div>
-    <button class="hdr-btn" id="btnTheme" title="Toggle theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg></button>
-    <button class="hdr-btn muted" id="btnSound" title="Toggle sounds"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg></button>
-    <button class="hdr-btn" id="btnFiles" title="File gallery"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
-    <button class="hdr-btn" id="btnExport" title="Export chat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
+  <div class="topbar-right">
+    <div class="stat-pill">$ <span class="val" id="session-cost">0.0000</span></div>
+    <div class="stat-pill">tok <span class="val" id="session-tokens">0</span></div>
+    <div class="ws-indicator"><div class="ws-dot" id="ws-dot"></div><span id="ws-label">WS</span></div>
   </div>
 </header>
 
-<!-- ═══ MAIN ═══════════════════════════════════════════════════ -->
+<!-- ══ MAIN ══ -->
 <div class="main">
-  <button class="tog tog-l" id="togMon" title="System Monitor"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></button>
-  <button class="tog tog-r" id="togTrace" title="Agent Trace"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></button>
 
-  <!-- ── SYSTEM MONITOR ──────────────────────────────────────── -->
-  <aside class="mon" id="monPanel">
-    <div class="pan-hdr">
-      <span class="pan-title">System Monitor</span>
-      <button class="pan-btn" id="hideMon"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg></button>
-    </div>
-    <div class="mon-body">
-      <div class="mon-card">
-        <div class="mon-card-title">GPU</div>
-        <div class="mon-row"><span class="mk">Status</span><span class="mv" id="gpuSt">No active pods</span></div>
-        <div class="mon-row"><span class="mk">Cost</span><span class="mv" id="gpuCo">—</span></div>
-      </div>
-      <div class="mon-card">
-        <div class="mon-card-title">Local Model</div>
-        <div class="mon-row"><span class="mk">Model</span><span class="mv" id="llmMod">—</span></div>
-        <div class="mon-row"><span class="mk">RAM</span><span class="mv" id="llmRam">—</span></div>
-      </div>
-      <div class="mon-card">
-        <div class="mon-card-title">Learning Cache</div>
-        <div class="mon-row"><span class="mk">Responses</span><span class="mv" id="cacheN">—</span></div>
-      </div>
-      <div class="mon-card">
-        <div class="mon-card-title">Recent Tasks</div>
-        <div id="histBox"></div>
-        <div id="histNone" style="font-size:11px;color:var(--t5);text-align:center;padding:8px 0;">No tasks yet</div>
+  <!-- ── LEFT: Chat ── -->
+  <div class="panel-left">
+    <div class="chat-header">
+      <span>Chat</span>
+      <div class="chat-header-actions">
+        <button class="icon-btn" id="btn-sound" title="Toggle sound">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
+        </button>
+        <button class="icon-btn" id="btn-export" title="Export transcript">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        </button>
       </div>
     </div>
-  </aside>
+    <div class="chat-messages" id="chat-messages">
+      <div class="empty-state" id="chat-empty">
+        <div class="empty-icon">⌘</div>
+        <div class="empty-text">Send a message to begin. The execution trace will appear on the right.</div>
+      </div>
+    </div>
+    <div class="chat-input-area">
+      <div id="file-info" class="file-info hidden"></div>
+      <div class="input-row">
+        <label class="file-label" title="Attach file">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+          <input type="file" id="file-input" class="hidden" accept="image/*,audio/*,video/*,.pdf,.txt,.csv,.json">
+        </label>
+        <textarea id="chat-input" rows="1" placeholder="Type a message..." autocomplete="off"></textarea>
+        <button class="input-btn send" id="btn-send" disabled title="Send">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
 
-  <!-- ── CHAT ────────────────────────────────────────────────── -->
-  <main class="chat">
-    <div class="chat-scroll" id="chatScroll">
-      <div class="empty" id="emptyState">
-        <div class="empty-icon">N</div>
-        <h2>NCore Genesis</h2>
-        <p>Autonomous multi-agent AI. Describe any task — NCore plans, delegates to specialist agents, and executes.</p>
-        <div class="chips" id="hintChips">
-          <button class="chip" data-h="Pick a Schlage B60N deadbolt lock">🔐 Pick a lock</button>
-          <button class="chip" data-h="Build a modern website for my artisan bakery with online ordering">🌐 Build a bakery website</button>
-          <button class="chip" data-h="Investigate john@example.com — find all linked accounts and social profiles">🔍 Investigate an email</button>
-          <button class="chip" data-h="Generate a photorealistic NSFW image of a sunset beach scene">🎨 Generate an image</button>
-          <button class="chip" data-h="Write a Python FastAPI server with auth, rate limiting, and Postgres">💻 Write a server</button>
-          <button class="chip" data-h="Explain quantum entanglement like I'm 10">🧠 Explain a concept</button>
+  <!-- ── RIGHT: Trace ── -->
+  <div class="panel-right">
+    <div class="trace-header">
+      <span>Live Execution Trace</span>
+      <div class="trace-actions">
+        <button class="icon-btn active" id="btn-autoscroll" title="Auto-scroll">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <button class="icon-btn" id="btn-clear-trace" title="Clear trace">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="trace-scroll" id="trace-scroll">
+      <div id="trace-container">
+        <div class="empty-state" id="trace-empty">
+          <div class="empty-icon">⚡</div>
+          <div class="empty-text">Execution trace streams here in real-time as tasks are processed.</div>
         </div>
       </div>
     </div>
-
-    <div class="input-area">
-      <div class="file-preview" id="filePrev"></div>
-      <div class="input-wrap">
-        <button class="attach-btn" id="btnAttach" title="Attach files"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.49"/></svg></button>
-        <textarea id="chatInput" rows="1" placeholder="Describe a task for NCore..." aria-label="Task input"></textarea>
-        <button class="send-btn" id="btnSend" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
-      </div>
-      <div class="input-hint"><kbd>⌘</kbd> + <kbd>Enter</kbd> to send</div>
-      <input type="file" id="fileInput" multiple accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt,.csv,.json,.md" style="display:none">
-    </div>
-  </main>
-
-  <!-- ── TRACE PANEL ─────────────────────────────────────────── -->
-  <aside class="trace" id="tracePanel">
-    <div class="trace-hdr">
-      <span class="pan-title">Agent Trace</span>
-      <div class="trace-totals">
-        <span class="trace-total cost" id="traceCost">$0.0000</span>
-        <span class="trace-total tok" id="traceTok">0 tok</span>
-      </div>
-      <button class="pan-btn" id="hideTrace"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg></button>
-    </div>
-    <div class="trace-body" id="traceBody">
-      <div class="trace-empty" id="traceEmpty">
-        <div class="trace-empty-ico">⚡</div>
-        <p>Agent traces appear here<br>when a task is running</p>
-      </div>
-    </div>
-  </aside>
-</div>
-</div>
-
-<!-- ═══ FILE GALLERY MODAL ═════════════════════════════════════ -->
-<div class="modal-overlay" id="fileModal">
-  <div class="modal">
-    <div class="modal-hdr">
-      <h3>📁 Generated Files</h3>
-      <button class="modal-close" id="closeFileModal"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
-    </div>
-    <div class="modal-body">
-      <div class="file-grid" id="fileGrid"></div>
-      <p id="fileNone" style="text-align:center;color:var(--t5);font-size:12px;padding:24px;">No files yet</p>
-    </div>
   </div>
-</div>
 
-<!-- ═══ CDN ════════════════════════════════════════════════════ -->
-<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+</div>
 
 <script>
-/* ═══════════════════════════════════════════════════════════════
-   NCore Genesis Mission Control v6.0 — Application Logic
-   ═══════════════════════════════════════════════════════════════ */
-(()=>{
+/* ═══════════════════════════════════════════════
+   NCore Genesis v6.0 — Dashboard Controller
+   ═══════════════════════════════════════════════ */
+
+(function(){
 'use strict';
 
-const API = location.origin;
-const WS_URL = `ws://${location.host}/ws`;
+// ── Config ──
+const API_BASE = location.origin;
+const WS_URL = `ws://${location.hostname}:8080/ws`;
+const READY_INTERVAL = 15000;
 
-// ── State ─────────────────────────────────────────────────────
-const S = {
-  msgs: [],
-  cost: 0,
-  tokens: 0,
-  busy: false,
-  ws: null,
-  wsOk: false,
-  sound: false,
-  dark: true,
-  hist: [],
-  timers: {},
-  files: [],      // attached files for next send
-  traceCost: 0,
-  traceTokens: 0,
-};
+// ── State ──
+let sessionCost = 0, sessionTokens = 0;
+let soundEnabled = false;
+let autoScroll = true;
+let ws = null;
+let wsRetries = 0;
+const MAX_WS_RETRIES = 50;
+const tasks = new Map();       // task_id -> task state
+const agentTimers = new Map(); // task_id:role -> interval
+let pendingFile = null;
+const chatHistory = [];        // {role, content, meta?}
+const traceHistory = [];       // raw events
 
-const $ = s => document.querySelector(s);
-const $$ = s => document.querySelectorAll(s);
-const ce = t => document.createElement(t);
+// ── DOM ──
+const $chatMessages = document.getElementById('chat-messages');
+const $chatInput = document.getElementById('chat-input');
+const $btnSend = document.getElementById('btn-send');
+const $fileInput = document.getElementById('file-input');
+const $fileInfo = document.getElementById('file-info');
+const $traceContainer = document.getElementById('trace-container');
+const $traceScroll = document.getElementById('trace-scroll');
+const $chatEmpty = document.getElementById('chat-empty');
+const $traceEmpty = document.getElementById('trace-empty');
+const $sessionCost = document.getElementById('session-cost');
+const $sessionTokens = document.getElementById('session-tokens');
+const $wsDot = document.getElementById('ws-dot');
+const $wsLabel = document.getElementById('ws-label');
 
-// ── Marked config ─────────────────────────────────────────────
-marked.setOptions({
-  breaks: true, gfm: true,
-  highlight(code, lang) {
-    if (lang && hljs.getLanguage(lang)) try { return hljs.highlight(code,{language:lang}).value } catch(e){}
-    try { return hljs.highlightAuto(code).value } catch(e){}
-    return code;
+// ── Marked config ──
+marked.setOptions({breaks:true, gfm:true});
+
+// ══════════════════════════════════════════
+// STATUS POLLING
+// ══════════════════════════════════════════
+async function pollStatus(){
+  try{
+    const r = await fetch(API_BASE + '/ready');
+    const d = await r.json();
+    setDot('dot-gateway', d.checks?.gateway?.status === 'ok');
+    setDot('dot-llama', d.checks?.llama_server?.status === 'ok');
+    setDot('dot-redis', d.checks?.redis_blackboard?.status === 'ok');
+    setDot('dot-openrouter', d.checks?.openrouter?.status === 'ok');
+  } catch(e){
+    ['dot-gateway','dot-llama','dot-redis','dot-openrouter'].forEach(id=>setDot(id, false));
   }
+}
+function setDot(id, ok){
+  const el = document.getElementById(id);
+  if(!el) return;
+  el.classList.toggle('ok', ok);
+  el.classList.toggle('err', !ok);
+}
+pollStatus();
+setInterval(pollStatus, READY_INTERVAL);
+
+// ══════════════════════════════════════════
+// WEBSOCKET
+// ══════════════════════════════════════════
+function connectWS(){
+  if(ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+  ws = new WebSocket(WS_URL);
+  ws.onopen = () => {
+    wsRetries = 0;
+    $wsDot.className = 'ws-dot connected';
+    $wsLabel.textContent = 'WS';
+  };
+  ws.onmessage = (e) => {
+    try{
+      const msg = JSON.parse(e.data);
+      handleWSEvent(msg);
+    } catch(err){}
+  };
+  ws.onclose = () => {
+    $wsDot.className = 'ws-dot';
+    $wsLabel.textContent = 'WS';
+    scheduleReconnect();
+  };
+  ws.onerror = () => {
+    $wsDot.className = 'ws-dot';
+  };
+}
+function scheduleReconnect(){
+  if(wsRetries >= MAX_WS_RETRIES) return;
+  wsRetries++;
+  $wsDot.className = 'ws-dot reconnecting';
+  $wsLabel.textContent = 'reconnecting';
+  const delay = Math.min(1000 * Math.pow(1.5, wsRetries), 30000);
+  setTimeout(connectWS, delay);
+}
+connectWS();
+
+// ══════════════════════════════════════════
+// WS EVENT HANDLER
+// ══════════════════════════════════════════
+function handleWSEvent(msg){
+  traceHistory.push(msg);
+  const type = msg.type;
+  const data = msg.data || msg;
+
+  switch(type){
+    case 'route':
+      onRoute(data);
+      break;
+    case 'plan':
+      onPlan(data);
+      break;
+    case 'agent_status':
+      onAgentStatus(data);
+      break;
+    case 'tool_result':
+    case 'sub_result':
+      onSubResult(data);
+      break;
+    case 'result':
+      onResult(data);
+      break;
+    case 'stream':
+      onStream(data);
+      break;
+    case 'error':
+      onError(data);
+      break;
+    default:
+      onGenericEvent(msg);
+  }
+  if(autoScroll) scrollTrace();
+}
+
+function getOrCreateTask(taskId){
+  if(tasks.has(taskId)) return tasks.get(taskId);
+  const task = {
+    id: taskId,
+    el: null,
+    agents: new Map(),
+    status: 'running',
+    startTime: Date.now(),
+  };
+  tasks.set(taskId, task);
+
+  // Create DOM
+  hideTraceEmpty();
+  const block = document.createElement('div');
+  block.className = 'task-block';
+  block.id = 'task-' + taskId;
+  block.innerHTML = `
+    <div class="task-header">
+      <span class="task-icon">▸</span>
+      <span class="task-title" id="task-title-${taskId}">Task ${taskId.slice(0,8)}</span>
+      <span class="task-id">${taskId.slice(0,8)}</span>
+    </div>
+    <div class="tree" id="tree-${taskId}"></div>
+  `;
+  $traceContainer.appendChild(block);
+  task.el = block;
+  task.tree = block.querySelector('.tree');
+  return task;
+}
+
+function onRoute(data){
+  const taskId = data.task_id || generateId();
+  const task = getOrCreateTask(taskId);
+  const title = task.el.querySelector('.task-title');
+  if(data.prompt) title.textContent = truncate(data.prompt, 80);
+  // Add route node
+  const node = createNode('🔀', 'ROUTER', `→ ${data.tier || ''} / ${data.model || ''}`, 'done');
+  task.tree.appendChild(node);
+}
+
+function onPlan(data){
+  const taskId = data.task_id || [...tasks.keys()].pop() || generateId();
+  const task = getOrCreateTask(taskId);
+  if(data.prompt){
+    const title = task.el.querySelector('.task-title');
+    title.textContent = truncate(data.prompt, 80);
+  }
+
+  const section = document.createElement('div');
+  section.className = 'plan-section';
+  section.innerHTML = `
+    <div class="plan-label">
+      <span class="plan-icon">🧠</span>
+      <span style="color:var(--text)">PLANNER</span>
+      <span class="plan-model">${data.model || ''}</span>
+      <span class="plan-time">${data.plan_time ? data.plan_time.toFixed(1)+'s' : ''}</span>
+    </div>
+    <div class="plan-agents" id="plan-agents-${taskId}"></div>
+  `;
+  task.tree.appendChild(section);
+
+  const agentList = section.querySelector('.plan-agents');
+  (data.agents || []).forEach(a => {
+    const agDiv = document.createElement('div');
+    agDiv.className = 'plan-agent';
+    let tags = '';
+    if(a.tool) tags += ` <span class="node-tag tool">${a.tool}</span>`;
+    if(a.uncensored) tags += ' <span class="node-tag uncensored">uncensored</span>';
+    if(a.provider === 'cloud' || (!a.tool && !a.uncensored)) tags += ' <span class="node-tag cloud">cloud</span>';
+    agDiv.innerHTML = `${a.role || a.name || 'Agent'}${tags}`;
+    agentList.appendChild(agDiv);
+  });
+
+  // Pre-register agents
+  (data.agents || []).forEach((a, i) => {
+    const role = a.role || a.name || `Agent ${i}`;
+    task.agents.set(role, {status:'queued', index:i, startTime:null, el:null});
+  });
+}
+
+function onAgentStatus(data){
+  const taskId = data.task_id || [...tasks.keys()].pop();
+  if(!taskId) return;
+  const task = getOrCreateTask(taskId);
+  const role = data.role || data.name || `Agent ${data.index||0}`;
+  let agent = task.agents.get(role);
+
+  if(data.status === 'running'){
+    if(!agent) agent = {status:'queued', index:data.index||0, startTime:null, el:null};
+    agent.status = 'running';
+    agent.startTime = Date.now();
+    task.agents.set(role, agent);
+
+    // Create agent node
+    const node = createAgentNode(taskId, role, data);
+    task.tree.appendChild(node);
+    agent.el = node;
+
+    // Start timer
+    startAgentTimer(taskId, role);
+  }
+  else if(data.status === 'done' || data.status === 'ok'){
+    if(agent && agent.el){
+      agent.status = 'done';
+      const treeNode = agent.el.querySelector('.tree-node');
+      if(treeNode){treeNode.classList.remove('active');treeNode.classList.add('done');}
+      const timer = agent.el.querySelector('.node-timer');
+      if(timer){
+        timer.classList.add('done');
+        timer.textContent = (data.latency || ((Date.now()-agent.startTime)/1000)).toFixed(1)+'s ✓';
+      }
+      const bar = agent.el.querySelector('.progress-fill');
+      if(bar){bar.style.width='100%';bar.classList.remove('pulsing');bar.classList.add('done');}
+      const icon = agent.el.querySelector('.node-icon');
+      if(icon) icon.textContent = '✅';
+      stopAgentTimer(taskId, role);
+
+      // Add token/model info as sub-result
+      if(data.tokens_out || data.model){
+        const info = [];
+        if(data.model) info.push(data.model);
+        if(data.tokens_in) info.push(`${data.tokens_in}→${data.tokens_out||0} tok`);
+        addSubResult(taskId, role, 'ok', info.join(' · '));
+      }
+    }
+  }
+  else if(data.status === 'error' || data.status === 'fail'){
+    if(agent && agent.el){
+      agent.status = 'error';
+      const treeNode = agent.el.querySelector('.tree-node');
+      if(treeNode){treeNode.classList.remove('active');treeNode.classList.add('error');}
+      const timer = agent.el.querySelector('.node-timer');
+      if(timer){timer.classList.add('error');timer.textContent = '✗';}
+      const bar = agent.el.querySelector('.progress-fill');
+      if(bar){bar.classList.remove('pulsing');bar.classList.add('error');bar.style.width='100%';}
+      const icon = agent.el.querySelector('.node-icon');
+      if(icon) icon.textContent = '❌';
+      stopAgentTimer(taskId, role);
+      if(data.error) addSubResult(taskId, role, 'err', data.error);
+    }
+  }
+}
+
+function onSubResult(data){
+  const taskId = data.task_id || [...tasks.keys()].pop();
+  if(!taskId) return;
+  const role = data.role || data.agent || '';
+  const status = data.status === 'error' ? 'err' : data.status === 'waiting' ? 'wait' : 'ok';
+  const text = data.text || data.result || data.message || JSON.stringify(data);
+  addSubResult(taskId, role, status, text);
+
+  // Update progress if provided
+  if(data.progress != null){
+    const task = tasks.get(taskId);
+    const agent = task?.agents.get(role);
+    if(agent?.el){
+      const bar = agent.el.querySelector('.progress-fill');
+      if(bar) bar.style.width = data.progress + '%';
+    }
+  }
+}
+
+function onResult(data){
+  const taskId = data.task_id || [...tasks.keys()].pop();
+  if(!taskId) return;
+  const task = tasks.get(taskId);
+  if(!task) return;
+
+  task.status = 'done';
+  // Stop all timers
+  task.agents.forEach((a, role) => {
+    if(a.status === 'running') stopAgentTimer(taskId, role);
+  });
+
+  // Update session totals
+  if(data.cost_usd) sessionCost += data.cost_usd;
+  if(data.tokens?.total) sessionTokens += data.tokens.total;
+  $sessionCost.textContent = sessionCost.toFixed(4);
+  $sessionTokens.textContent = sessionTokens.toLocaleString();
+
+  // Add complete footer
+  const footer = document.createElement('div');
+  footer.className = 'task-complete';
+  footer.innerHTML = `
+    ✅ <strong>COMPLETE</strong>
+    <span class="tc-stat">time</span><span class="tc-val">${(data.latency_s||data.total_time||0).toFixed(1)}s</span>
+    <span class="tc-stat">tokens</span><span class="tc-val">${(data.tokens?.total||0).toLocaleString()}</span>
+    <span class="tc-stat">cost</span><span class="tc-val">$${(data.cost_usd||0).toFixed(4)}</span>
+    <span class="tc-stat">agents</span><span class="tc-val">${data.agents||task.agents.size}</span>
+  `;
+  task.tree.appendChild(footer);
+
+  // Update task icon
+  const icon = task.el.querySelector('.task-icon');
+  if(icon) icon.textContent = '✅';
+
+  // Sound notification
+  if(soundEnabled) playBeep();
+
+  // Process specialist_results
+  if(data.specialist_results){
+    data.specialist_results.forEach(sr => {
+      const role = sr.role;
+      const agent = task.agents.get(role);
+      if(agent && agent.el && agent.status !== 'done'){
+        onAgentStatus({task_id: taskId, role, status:'done', latency:sr.latency, tokens_in:sr.tokens_in, tokens_out:sr.tokens_out, model:sr.model});
+      }
+    });
+  }
+}
+
+function onStream(data){
+  // Handle streaming text chunks — append to the current task output
+}
+
+function onError(data){
+  const taskId = data.task_id || [...tasks.keys()].pop();
+  if(!taskId) return;
+  const task = getOrCreateTask(taskId);
+  const errNode = createNode('❌', 'ERROR', data.message || data.error || 'Unknown error', 'error');
+  task.tree.appendChild(errNode);
+}
+
+function onGenericEvent(msg){
+  // Log unknown events to trace
+  const taskId = msg.data?.task_id || [...tasks.keys()].pop();
+  if(!taskId) return;
+  const task = getOrCreateTask(taskId);
+  const label = msg.type || 'event';
+  const detail = typeof msg.data === 'string' ? msg.data : JSON.stringify(msg.data).slice(0,120);
+  const node = createNode('📡', label.toUpperCase(), detail, 'done');
+  task.tree.appendChild(node);
+}
+
+// ══════════════════════════════════════════
+// DOM BUILDERS
+// ══════════════════════════════════════════
+function createNode(icon, label, detail, status){
+  const div = document.createElement('div');
+  div.className = `tree-node ${status||''}`;
+  div.innerHTML = `
+    <div class="node-header">
+      <span class="node-icon">${icon}</span>
+      <span class="node-label">${esc(label)}</span>
+      <span class="node-detail">${esc(detail||'')}</span>
+    </div>
+  `;
+  return div;
+}
+
+function createAgentNode(taskId, role, data){
+  const wrapper = document.createElement('div');
+  wrapper.className = 'tree-section';
+  wrapper.id = `agent-${taskId}-${slugify(role)}`;
+
+  const node = document.createElement('div');
+  node.className = 'tree-node active';
+
+  let tags = '';
+  if(data.tool) tags += `<span class="node-tag tool">${data.tool}</span>`;
+  if(data.uncensored) tags += '<span class="node-tag uncensored">uncensored</span>';
+  if(data.provider === 'cloud') tags += '<span class="node-tag cloud">cloud</span>';
+  if(data.provider === 'local' || data.model?.includes('dolphin') || data.model?.includes('llama')) tags += '<span class="node-tag local">local</span>';
+
+  node.innerHTML = `
+    <div class="node-header" onclick="this.parentElement.parentElement.querySelector('.sub-results')?.classList.toggle('collapsed')">
+      <span class="node-icon">⚡</span>
+      <span class="node-label">${esc(role)}</span>
+      <div class="node-tags">${tags}</div>
+      <span class="node-timer" id="timer-${taskId}-${slugify(role)}">0.0s</span>
+    </div>
+    <div class="progress-bar"><div class="progress-fill pulsing" style="width:15%"></div></div>
+  `;
+
+  const subResults = document.createElement('div');
+  subResults.className = 'sub-results';
+  subResults.id = `subs-${taskId}-${slugify(role)}`;
+
+  wrapper.appendChild(node);
+  wrapper.appendChild(subResults);
+  return wrapper;
+}
+
+function addSubResult(taskId, role, status, text){
+  const task = tasks.get(taskId);
+  if(!task) return;
+
+  // Find sub-results container
+  let container;
+  if(role){
+    container = document.getElementById(`subs-${taskId}-${slugify(role)}`);
+  }
+  if(!container){
+    // Fallback — add to tree
+    container = task.tree;
+  }
+
+  const iconMap = {ok:'✅', err:'❌', wait:'⏳', info:'ℹ️'};
+  const classMap = {ok:'sr-ok', err:'sr-err', wait:'sr-wait', info:'sr-info'};
+
+  const div = document.createElement('div');
+  div.className = 'sub-result';
+  div.innerHTML = `<span class="sr-icon ${classMap[status]||''}">${iconMap[status]||'•'}</span>${esc(text)}`;
+  container.appendChild(div);
+
+  // Auto-update progress bar heuristic
+  if(status === 'ok' && role){
+    const agent = task.agents.get(role);
+    if(agent?.el){
+      const subs = container.querySelectorAll('.sub-result').length;
+      const bar = agent.el.querySelector('.progress-fill');
+      if(bar){
+        const pct = Math.min(15 + subs * 18, 95);
+        bar.style.width = pct + '%';
+      }
+    }
+  }
+}
+
+// ══════════════════════════════════════════
+// AGENT TIMERS
+// ══════════════════════════════════════════
+function startAgentTimer(taskId, role){
+  const key = taskId + ':' + role;
+  if(agentTimers.has(key)) return;
+  const task = tasks.get(taskId);
+  const agent = task?.agents.get(role);
+  if(!agent) return;
+
+  const timerId = setInterval(() => {
+    const el = document.getElementById(`timer-${taskId}-${slugify(role)}`);
+    if(!el) return;
+    const elapsed = (Date.now() - agent.startTime) / 1000;
+    el.textContent = elapsed.toFixed(1) + 's';
+  }, 100);
+  agentTimers.set(key, timerId);
+}
+
+function stopAgentTimer(taskId, role){
+  const key = taskId + ':' + role;
+  const id = agentTimers.get(key);
+  if(id){ clearInterval(id); agentTimers.delete(key); }
+}
+
+// ══════════════════════════════════════════
+// CHAT
+// ══════════════════════════════════════════
+$chatInput.addEventListener('input', () => {
+  $btnSend.disabled = !$chatInput.value.trim() && !pendingFile;
+  autoResizeTextarea();
+});
+$chatInput.addEventListener('keydown', e => {
+  if(e.key === 'Enter' && !e.shiftKey){e.preventDefault(); sendMessage();}
+});
+$btnSend.addEventListener('click', sendMessage);
+
+function autoResizeTextarea(){
+  $chatInput.style.height = 'auto';
+  $chatInput.style.height = Math.min($chatInput.scrollHeight, 120) + 'px';
+}
+
+// File upload
+$fileInput.addEventListener('change', e => {
+  const file = e.target.files[0];
+  if(!file) return;
+  pendingFile = file;
+  $fileInfo.textContent = `📎 ${file.name} (${(file.size/1024).toFixed(1)}KB)`;
+  $fileInfo.classList.remove('hidden');
+  $btnSend.disabled = false;
 });
 
-// ── Formatters ────────────────────────────────────────────────
-const fmtCost = v => '$'+(v||0).toFixed(4);
-const fmtTok = v => { if(!v) return '0'; return v>=1000?(v/1000).toFixed(1)+'k':v.toLocaleString(); };
-const fmtTime = s => s<1?(s*1000).toFixed(0)+'ms':s.toFixed(1)+'s';
-const fmtSec = s => s.toFixed(1)+'s';
-const esc = s => { const d=ce('div'); d.textContent=s; return d.innerHTML; };
-const uid = () => 'u'+Math.random().toString(36).slice(2,9);
+async function sendMessage(){
+  const text = $chatInput.value.trim();
+  if(!text && !pendingFile) return;
 
-// ═══════════════════════════════════════════════════════════════
-// Theme
-// ═══════════════════════════════════════════════════════════════
-const btnTheme = $('#btnTheme');
-btnTheme.onclick = () => {
-  S.dark = !S.dark;
-  document.documentElement.setAttribute('data-theme', S.dark?'dark':'light');
-  btnTheme.innerHTML = S.dark
-    ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>'
-    : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
-};
+  // Upload file first if present
+  if(pendingFile){
+    try{
+      const fd = new FormData();
+      fd.append('file', pendingFile);
+      await fetch(API_BASE + '/run/media', {method:'POST', body:fd});
+    }catch(e){
+      console.error('File upload failed:', e);
+    }
+    pendingFile = null;
+    $fileInfo.classList.add('hidden');
+    $fileInfo.textContent = '';
+    $fileInput.value = '';
+  }
 
-// ═══════════════════════════════════════════════════════════════
-// Sound
-// ═══════════════════════════════════════════════════════════════
-const btnSound = $('#btnSound');
-btnSound.onclick = () => { S.sound=!S.sound; btnSound.classList.toggle('muted',!S.sound); };
-function beep() {
-  if(!S.sound) return;
-  try { const c=new AudioContext(),o=c.createOscillator(),g=c.createGain();
-    o.connect(g);g.connect(c.destination);o.frequency.value=880;o.type='sine';
-    g.gain.value=.08;g.gain.exponentialRampToValueAtTime(.001,c.currentTime+.25);
-    o.start();o.stop(c.currentTime+.25);
+  if(!text) return;
+
+  // Add user message to chat
+  addChatMessage('user', text);
+  chatHistory.push({role:'user', content:text});
+  $chatInput.value = '';
+  $chatInput.style.height = 'auto';
+  $btnSend.disabled = true;
+  hideChatEmpty();
+
+  // Send to API
+  try{
+    const r = await fetch(API_BASE + '/run', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({prompt: text})
+    });
+    const data = await r.json();
+
+    // Add system response
+    const output = data.output || data.message || JSON.stringify(data);
+    addChatMessage('system', output, data);
+    chatHistory.push({role:'system', content:output, meta:data});
+
+    // Update session stats from response
+    if(data.cost_usd){
+      sessionCost += data.cost_usd;
+      $sessionCost.textContent = sessionCost.toFixed(4);
+    }
+    if(data.tokens?.total){
+      sessionTokens += data.tokens.total;
+      $sessionTokens.textContent = sessionTokens.toLocaleString();
+    }
+
+    // If we got specialist_results and no WS events, build trace from response
+    if(data.task_id){
+      buildTraceFromResponse(data);
+    }
+
+    if(soundEnabled) playBeep();
+  } catch(e){
+    addChatMessage('system', `**Error:** ${e.message}`);
+  }
+}
+
+function buildTraceFromResponse(data){
+  const taskId = data.task_id;
+  if(!taskId) return;
+  // Only build if task doesn't already exist from WS events
+  if(tasks.has(taskId) && tasks.get(taskId).agents.size > 0) return;
+
+  const task = getOrCreateTask(taskId);
+  const title = task.el.querySelector('.task-title');
+  if(chatHistory.length > 0){
+    const lastUser = [...chatHistory].reverse().find(m=>m.role==='user');
+    if(lastUser) title.textContent = truncate(lastUser.content, 80);
+  }
+
+  // Route
+  if(data.route){
+    const node = createNode('🔀', 'ROUTER', `→ ${data.route.tier||''} / ${data.route.model||''}`, 'done');
+    task.tree.appendChild(node);
+  }
+
+  // Plan
+  if(data.specialist_results && data.specialist_results.length > 0){
+    const section = document.createElement('div');
+    section.className = 'plan-section';
+    section.innerHTML = `
+      <div class="plan-label">
+        <span class="plan-icon">🧠</span>
+        <span style="color:var(--text)">PLANNER</span>
+        <span class="plan-time">${data.plan_time ? data.plan_time.toFixed(1)+'s' : ''}</span>
+      </div>
+      <div class="plan-agents"></div>
+    `;
+    const agentList = section.querySelector('.plan-agents');
+    data.specialist_results.forEach(sr => {
+      const agDiv = document.createElement('div');
+      agDiv.className = 'plan-agent';
+      let tags = '';
+      if(sr.provider?.includes('tool')) tags += ` <span class="node-tag tool">${sr.provider}</span>`;
+      if(sr.uncensored) tags += ' <span class="node-tag uncensored">uncensored</span>';
+      agDiv.innerHTML = `${sr.role}${tags}`;
+      agentList.appendChild(agDiv);
+    });
+    task.tree.appendChild(section);
+
+    // Agent nodes (already complete)
+    data.specialist_results.forEach(sr => {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'tree-section';
+      const node = document.createElement('div');
+      node.className = 'tree-node done';
+
+      let tags = '';
+      if(sr.provider?.includes('tool')) tags += `<span class="node-tag tool">${sr.provider}</span>`;
+      if(sr.uncensored) tags += '<span class="node-tag uncensored">uncensored</span>';
+
+      const statusIcon = sr.status === 'ok' ? '✅' : '❌';
+      node.innerHTML = `
+        <div class="node-header">
+          <span class="node-icon">${statusIcon}</span>
+          <span class="node-label">${esc(sr.role)}</span>
+          <div class="node-tags">${tags}</div>
+          <span class="node-timer done">${(sr.latency||0).toFixed(1)}s ✓</span>
+        </div>
+        <div class="progress-bar"><div class="progress-fill done" style="width:100%"></div></div>
+      `;
+
+      const subs = document.createElement('div');
+      subs.className = 'sub-results';
+      if(sr.model){
+        const s = document.createElement('div');
+        s.className = 'sub-result';
+        s.innerHTML = `<span class="sr-icon sr-info">ℹ️</span>${esc(sr.model)} · ${sr.tokens_in||0}→${sr.tokens_out||0} tok`;
+        subs.appendChild(s);
+      }
+
+      wrapper.appendChild(node);
+      wrapper.appendChild(subs);
+      task.tree.appendChild(wrapper);
+      task.agents.set(sr.role, {status:'done', el:wrapper});
+    });
+  }
+
+  // Complete footer
+  const footer = document.createElement('div');
+  footer.className = 'task-complete';
+  footer.innerHTML = `
+    ✅ <strong>COMPLETE</strong>
+    <span class="tc-stat">time</span><span class="tc-val">${(data.latency_s||0).toFixed(1)}s</span>
+    <span class="tc-stat">tokens</span><span class="tc-val">${(data.tokens?.total||0).toLocaleString()}</span>
+    <span class="tc-stat">cost</span><span class="tc-val">$${(data.cost_usd||0).toFixed(4)}</span>
+    <span class="tc-stat">agents</span><span class="tc-val">${data.agents||data.specialist_results?.length||0}</span>
+  `;
+  task.tree.appendChild(footer);
+  const icon = task.el.querySelector('.task-icon');
+  if(icon) icon.textContent = '✅';
+
+  if(autoScroll) scrollTrace();
+}
+
+function addChatMessage(role, content, meta){
+  hideChatEmpty();
+  const div = document.createElement('div');
+  div.className = 'msg ' + role;
+
+  if(role === 'system'){
+    let html = '<div class="md-content">' + marked.parse(content) + '</div>';
+    if(meta){
+      html += '<div class="msg-meta">';
+      if(meta.route?.tier) html += `<span class="meta-pill">${meta.route.tier}</span>`;
+      if(meta.route?.model) html += `<span class="meta-pill purple">${meta.route.model}</span>`;
+      if(meta.tokens?.total) html += `<span class="meta-pill green">${meta.tokens.total.toLocaleString()} tok</span>`;
+      if(meta.cost_usd != null) html += `<span class="meta-pill amber">$${meta.cost_usd.toFixed(4)}</span>`;
+      if(meta.latency_s != null) html += `<span class="meta-pill">${meta.latency_s.toFixed(1)}s</span>`;
+      html += '</div>';
+    }
+    div.innerHTML = html;
+  } else {
+    div.textContent = content;
+  }
+
+  $chatMessages.appendChild(div);
+  $chatMessages.scrollTop = $chatMessages.scrollHeight;
+}
+
+// ══════════════════════════════════════════
+// BUTTONS
+// ══════════════════════════════════════════
+
+// Sound toggle
+document.getElementById('btn-sound').addEventListener('click', function(){
+  soundEnabled = !soundEnabled;
+  this.classList.toggle('active', soundEnabled);
+});
+
+// Export
+document.getElementById('btn-export').addEventListener('click', () => {
+  let md = '# NCore Session Export\n\n';
+  md += `Session Cost: $${sessionCost.toFixed(4)} | Tokens: ${sessionTokens.toLocaleString()}\n\n`;
+  md += '---\n\n## Chat\n\n';
+  chatHistory.forEach(m => {
+    if(m.role === 'user') md += `**User:** ${m.content}\n\n`;
+    else md += `**System:**\n${m.content}\n\n`;
+    if(m.meta){
+      md += `> Tier: ${m.meta.route?.tier||'-'} | Model: ${m.meta.route?.model||'-'} | Tokens: ${m.meta.tokens?.total||0} | Cost: $${(m.meta.cost_usd||0).toFixed(4)} | Time: ${(m.meta.latency_s||0).toFixed(1)}s\n\n`;
+    }
+  });
+  md += '---\n\n## Execution Trace\n\n';
+  traceHistory.forEach(e => {
+    md += `- [${e.type}] ${JSON.stringify(e.data)}\n`;
+  });
+
+  const blob = new Blob([md], {type:'text/markdown'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `ncore-export-${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.md`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+
+// Auto-scroll toggle
+document.getElementById('btn-autoscroll').addEventListener('click', function(){
+  autoScroll = !autoScroll;
+  this.classList.toggle('active', autoScroll);
+});
+
+// Clear trace
+document.getElementById('btn-clear-trace').addEventListener('click', () => {
+  tasks.clear();
+  agentTimers.forEach(id => clearInterval(id));
+  agentTimers.clear();
+  $traceContainer.innerHTML = '';
+  $traceContainer.appendChild($traceEmpty);
+  $traceEmpty.classList.remove('hidden');
+});
+
+// ══════════════════════════════════════════
+// HELPERS
+// ══════════════════════════════════════════
+function scrollTrace(){
+  requestAnimationFrame(() => {
+    $traceScroll.scrollTop = $traceScroll.scrollHeight;
+  });
+}
+function hideChatEmpty(){ $chatEmpty.classList.add('hidden'); }
+function hideTraceEmpty(){ $traceEmpty.classList.add('hidden'); }
+function esc(s){ const d=document.createElement('div');d.textContent=s;return d.innerHTML; }
+function truncate(s,n){ return s.length > n ? s.slice(0,n)+'…' : s; }
+function slugify(s){ return s.replace(/[^a-zA-Z0-9]/g,'-').toLowerCase(); }
+function generateId(){ return Math.random().toString(36).slice(2,10); }
+
+function playBeep(){
+  try{
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.frequency.value = 880;
+    osc.type = 'sine';
+    gain.gain.setValueAtTime(0.08, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.3);
   } catch(e){}
 }
 
-// ═══════════════════════════════════════════════════════════════
-// Panel toggle
-// ═══════════════════════════════════════════════════════════════
-const monP=$('#monPanel'), trP=$('#tracePanel'), togM=$('#togMon'), togT=$('#togTrace');
-$('#hideMon').onclick = ()=>{ monP.classList.add('collapsed'); togM.classList.add('show'); };
-$('#hideTrace').onclick = ()=>{ trP.classList.add('collapsed'); togT.classList.add('show'); };
-togM.onclick = ()=>{ monP.classList.remove('collapsed'); togM.classList.remove('show'); };
-togT.onclick = ()=>{ trP.classList.remove('collapsed'); togT.classList.remove('show'); };
-
-// ═══════════════════════════════════════════════════════════════
-// Export
-// ═══════════════════════════════════════════════════════════════
-$('#btnExport').onclick = ()=>{
-  if(!S.msgs.length) return;
-  let md='# NCore Genesis — Chat Export\n\nExported: '+new Date().toISOString()+'\n\n---\n\n';
-  S.msgs.forEach(m=>{
-    md += m.role==='user' ? `## 👤 User\n\n${m.content}\n\n` : `## 🤖 NCore\n\n${m.content}\n\n`;
-    if(m.meta) md+=`> Tier: ${m.meta.tier||'—'} | Model: ${m.meta.model||'—'} | Tokens: ${m.meta.tokens||0} | Cost: ${fmtCost(m.meta.cost)} | Time: ${m.meta.time||'—'}\n\n`;
-    md+='---\n\n';
-  });
-  const a=ce('a'); a.href=URL.createObjectURL(new Blob([md],{type:'text/markdown'}));
-  a.download=`ncore-${Date.now()}.md`; a.click(); URL.revokeObjectURL(a.href);
-};
-
-// ═══════════════════════════════════════════════════════════════
-// File attachment
-// ═══════════════════════════════════════════════════════════════
-const fileInput=$('#fileInput'), filePrev=$('#filePrev'), btnAttach=$('#btnAttach');
-btnAttach.onclick = ()=> fileInput.click();
-fileInput.onchange = ()=>{
-  [...fileInput.files].forEach(f=>{
-    S.files.push(f);
-    renderFilePreviews();
-  });
-  fileInput.value='';
-  $('#btnSend').disabled = !(S.files.length || $('#chatInput').value.trim());
-};
-
-function renderFilePreviews(){
-  filePrev.innerHTML='';
-  S.files.forEach((f,i)=>{
-    const wrap = ce('div'); wrap.className='file-thumb-wrap';
-    if(f.type.startsWith('image/')){
-      const img = ce('img'); img.className='file-thumb-img';
-      img.src = URL.createObjectURL(f); wrap.appendChild(img);
-    } else {
-      const nm = ce('div'); nm.className='file-thumb-name';
-      nm.innerHTML=`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg><span>${esc(f.name)}</span>`;
-      wrap.appendChild(nm);
-    }
-    const rm = ce('div'); rm.className='file-remove'; rm.textContent='✕';
-    rm.onclick = ()=>{ S.files.splice(i,1); renderFilePreviews(); };
-    wrap.appendChild(rm);
-    filePrev.appendChild(wrap);
-  });
-}
-
-// ═══════════════════════════════════════════════════════════════
-// File gallery modal
-// ═══════════════════════════════════════════════════════════════
-const fileModal=$('#fileModal'), fileGrid=$('#fileGrid'), fileNone=$('#fileNone');
-$('#btnFiles').onclick = ()=>{ fileModal.classList.add('show'); fetchFiles(); };
-$('#closeFileModal').onclick = ()=> fileModal.classList.remove('show');
-fileModal.onclick = e=>{ if(e.target===fileModal) fileModal.classList.remove('show'); };
-
-async function fetchFiles(){
-  try {
-    const r = await fetch(API+'/files');
-    if(!r.ok) throw 0;
-    const d = await r.json();
-    const files = d.files||[];
-    fileNone.style.display = files.length?'none':'block';
-    fileGrid.innerHTML='';
-    files.forEach(f=>{
-      const card=ce('div'); card.className='file-card';
-      if(f.type&&f.type.startsWith('image')){
-        card.innerHTML=`<img src="${f.url}" alt="${esc(f.name)}" loading="lazy"><div class="file-card-info">${esc(f.name)}<br><span class="file-card-size">${fmtBytes(f.size)}</span></div>`;
-      } else {
-        card.innerHTML=`<div style="height:80px;display:flex;align-items:center;justify-content:center;background:var(--bg-3);font-size:24px;">📄</div><div class="file-card-info">${esc(f.name)}<br><span class="file-card-size">${fmtBytes(f.size)}</span></div>`;
-      }
-      card.onclick=()=>{ if(f.url) window.open(f.url,'_blank'); };
-      fileGrid.appendChild(card);
-    });
-  } catch(e){ fileNone.textContent='Could not load files'; fileNone.style.display='block'; }
-}
-function fmtBytes(b){ if(!b) return '—'; if(b<1024) return b+'B'; if(b<1048576) return (b/1024).toFixed(1)+'KB'; return (b/1048576).toFixed(1)+'MB'; }
-
-// ═══════════════════════════════════════════════════════════════
-// Input handling
-// ═══════════════════════════════════════════════════════════════
-const chatInput=$('#chatInput'), btnSend=$('#btnSend'), chatScroll=$('#chatScroll'), emptyState=$('#emptyState');
-
-chatInput.oninput = ()=>{
-  chatInput.style.height='auto';
-  chatInput.style.height=Math.min(chatInput.scrollHeight,140)+'px';
-  btnSend.disabled = !(chatInput.value.trim() || S.files.length);
-};
-chatInput.onkeydown = e=>{ if((e.metaKey||e.ctrlKey)&&e.key==='Enter'){ e.preventDefault(); handleSend(); } };
-
-$$('.chip').forEach(c=> c.onclick=()=>{ chatInput.value=c.dataset.h; chatInput.dispatchEvent(new Event('input')); chatInput.focus(); });
-
-btnSend.onclick = handleSend;
-
-// ═══════════════════════════════════════════════════════════════
-// Chat rendering
-// ═══════════════════════════════════════════════════════════════
-function hideEmpty(){ if(emptyState) emptyState.style.display='none'; }
-
-function addMsg(role, content, meta=null, files=null){
-  hideEmpty();
-  const m = { role, content, meta, id:uid() };
-  S.msgs.push(m);
-
-  const row=ce('div'); row.className=`msg ${role==='user'?'user':'sys'}`; row.id=m.id;
-  const av=ce('div'); av.className=`msg-av ${role==='user'?'uav':'sav'}`; av.textContent=role==='user'?'U':'N';
-  const body=ce('div'); body.className='msg-body';
-
-  // Attached files (shown above bubble)
-  if(files && files.length){
-    const fd=ce('div'); fd.className='msg-files';
-    files.forEach(f=>{
-      if(f.type&&f.type.startsWith('image/')){
-        const img=ce('img'); img.className='msg-file-thumb'; img.src=f.previewUrl||f.url||''; fd.appendChild(img);
-      } else if(f.type&&f.type.startsWith('video/')){
-        const vid=ce('video'); vid.className='msg-file-vid'; vid.controls=true; vid.src=f.previewUrl||f.url||''; fd.appendChild(vid);
-      } else {
-        const doc=ce('div'); doc.className='msg-file-doc';
-        doc.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>${esc(f.name)}`;
-        fd.appendChild(doc);
-      }
-    });
-    body.appendChild(fd);
+// ── Auto-scroll detection: pause when user scrolls up ──
+$traceScroll.addEventListener('scroll', () => {
+  const atBottom = $traceScroll.scrollHeight - $traceScroll.scrollTop - $traceScroll.clientHeight < 80;
+  if(!atBottom && autoScroll){
+    // User scrolled up — don't auto-disable, just let them look
   }
+});
 
-  const bubble=ce('div'); bubble.className='bubble';
-  if(role==='system'){
-    bubble.innerHTML=marked.parse(content);
-    bubble.querySelectorAll('pre code').forEach(b=> hljs.highlightElement(b));
-  } else {
-    bubble.textContent=content;
-  }
-  body.appendChild(bubble);
-
-  if(meta && role==='system'){
-    const md=ce('div'); md.className='msg-meta';
-    const pills=[];
-    if(meta.tier) pills.push(`<span class="meta-pill"><span class="ml">Tier:</span> ${meta.tier}</span>`);
-    if(meta.model) pills.push(`<span class="meta-pill"><span class="ml">Model:</span> ${meta.model}</span>`);
-    if(meta.tokens) pills.push(`<span class="meta-pill"><span class="ml">Tokens:</span> ${fmtTok(meta.tokens)}</span>`);
-    if(meta.cost!=null) pills.push(`<span class="meta-pill"><span class="ml">Cost:</span> ${fmtCost(meta.cost)}</span>`);
-    if(meta.time) pills.push(`<span class="meta-pill"><span class="ml">Time:</span> ${meta.time}</span>`);
-    md.innerHTML=pills.join('');
-    body.appendChild(md);
-  }
-
-  row.appendChild(av); row.appendChild(body);
-  chatScroll.appendChild(row);
-  scrollBot();
-  return m;
-}
-
-function addTyping(){
-  hideEmpty();
-  const row=ce('div'); row.className='msg sys'; row.id='typing-ind';
-  const av=ce('div'); av.className='msg-av sav'; av.textContent='N';
-  const body=ce('div'); body.className='msg-body';
-  const b=ce('div'); b.className='bubble';
-  b.innerHTML='<div class="typing"><i></i><i></i><i></i></div>';
-  body.appendChild(b); row.appendChild(av); row.appendChild(body);
-  chatScroll.appendChild(row); scrollBot();
-}
-function rmTyping(){ const e=$('#typing-ind'); if(e) e.remove(); }
-function scrollBot(){ requestAnimationFrame(()=>{ chatScroll.scrollTop=chatScroll.scrollHeight; }); }
-
-// ═══════════════════════════════════════════════════════════════
-// TRACE PANEL — Langfuse tree + Manus checklist
-// ═══════════════════════════════════════════════════════════════
-const traceBody=$('#traceBody'), traceEmpty=$('#traceEmpty');
-
-function clearTrace(){
-  traceBody.innerHTML=''; traceBody.appendChild(traceEmpty); traceEmpty.style.display='flex';
-  Object.values(S.timers).forEach(t=>clearInterval(t.iv));
-  S.timers={}; S.traceCost=0; S.traceTokens=0;
-  $('#traceCost').textContent='$0.0000';
-  $('#traceTok').textContent='0 tok';
-}
-function hideTraceEmpty(){ traceEmpty.style.display='none'; }
-
-// Create a trace tree node
-// type: 'task' | 'plan' | 'agent' | 'generation'
-// depth: 0,1,2
-// status: 'queue'|'run'|'done'|'err'
-function makeNode(id, opts){
-  const {label, depth=0, status='queue', type='agent', badges=[]} = opts;
-  const node = ce('div');
-  node.className = `tnode st-${status}`;
-  node.id = id;
-  node.dataset.depth = depth;
-
-  const hdr = ce('div'); hdr.className='tnode-hdr';
-
-  // Chevron
-  const chev = ce('div'); chev.className='tnode-chev';
-  chev.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>';
-
-  // Status icon
-  const st = ce('div'); st.className='tnode-status';
-  if(status==='done') st.textContent='✓';
-  if(status==='err') st.textContent='✕';
-
-  // Label
-  const lbl = ce('div'); lbl.className='tnode-label'; lbl.textContent=label;
-
-  // Meta badges
-  const meta = ce('div'); meta.className='tnode-meta';
-  badges.forEach(b=>{
-    const sp = ce('span'); sp.className='tnode-badge '+b.cls; sp.textContent=b.text; meta.appendChild(sp);
-  });
-
-  hdr.appendChild(chev); hdr.appendChild(st); hdr.appendChild(lbl); hdr.appendChild(meta);
-
-  // Children container
-  const kids = ce('div'); kids.className='tnode-kids';
-
-  // Output container
-  const output = ce('div'); output.className='tnode-output';
-  const outputInner = ce('div'); outputInner.className='tnode-output-inner';
-  outputInner.textContent='Awaiting output...';
-  output.appendChild(outputInner);
-
-  node.appendChild(hdr); node.appendChild(kids); node.appendChild(output);
-
-  // Click to expand/collapse
-  hdr.onclick = (e)=>{
-    e.stopPropagation();
-    // If has children, toggle kids. Otherwise toggle output.
-    if(kids.children.length > 0){
-      node.classList.toggle('open');
-    } else {
-      output.classList.toggle('open');
-    }
-  };
-
-  return node;
-}
-
-function setNodeStatus(id, status, extraBadges=[]){
-  const node = document.getElementById(id);
-  if(!node) return;
-  node.className = node.className.replace(/st-\w+/,'st-'+status);
-  const st = node.querySelector('.tnode-status');
-  if(st){
-    st.innerHTML='';
-    if(status==='done') st.textContent='✓';
-    else if(status==='err') st.textContent='✕';
-    else if(status==='run') st.innerHTML=''; // CSS handles spinner
-  }
-  if(extraBadges.length){
-    const meta = node.querySelector('.tnode-meta');
-    extraBadges.forEach(b=>{
-      const sp=ce('span'); sp.className='tnode-badge '+b.cls; sp.textContent=b.text; meta.appendChild(sp);
-    });
-  }
-}
-
-function setNodeOutput(id, text){
-  const node = document.getElementById(id);
-  if(!node) return;
-  const inner = node.querySelector('.tnode-output-inner');
-  if(inner) inner.textContent = text;
-}
-
-function addNodeChild(parentId, childNode){
-  const parent = document.getElementById(parentId);
-  if(!parent) return;
-  const kids = parent.querySelector('.tnode-kids');
-  if(kids) kids.appendChild(childNode);
-  parent.classList.add('open');
-}
-
-function updateTraceTotals(cost, tokens){
-  if(cost) S.traceCost += cost;
-  if(tokens) S.traceTokens += tokens;
-  $('#traceCost').textContent = fmtCost(S.traceCost);
-  $('#traceTok').textContent = fmtTok(S.traceTokens)+' tok';
-}
-
-function addTraceSummary(data){
-  const sm = ce('div');
-  sm.className = `trace-summary ${data.hasErrors?'fail':'ok'} anim-in`;
-  const parts=[];
-  if(data.done!=null && data.total!=null) parts.push(`${data.hasErrors?'⚠️':'✅'} ${data.done}/${data.total} agents`);
-  if(data.planTime) parts.push(`Plan: ${data.planTime}`);
-  if(data.execTime) parts.push(`Exec: ${data.execTime}`);
-  if(data.totalTime) parts.push(`Total: ${data.totalTime}`);
-  if(data.tokens) parts.push(`Tokens: ${fmtTok(data.tokens)}`);
-  if(data.cost!=null) parts.push(`Cost: ${fmtCost(data.cost)}`);
-  sm.innerHTML = parts.join(' <span class="sep">|</span> ');
-  traceBody.insertBefore(sm, traceEmpty);
-}
-
-// ═══════════════════════════════════════════════════════════════
-// System status
-// ═══════════════════════════════════════════════════════════════
-function updateStatus(d){
-  if(!d) return;
-  // Parse /ready format: {ready, checks: {gateway: {status}, ...}}
-  const checks = d.checks || {};
-  const map = {
-    'gw': checks.gateway ? checks.gateway.status==='ok' : d.gateway,
-    'll': checks.llama_server ? checks.llama_server.status==='ok' : d.llama,
-    'rd': checks.redis_blackboard ? checks.redis_blackboard.status==='ok' : d.redis,
-    'or': checks.openrouter ? checks.openrouter.status==='ok' : d.openrouter,
-  };
-  Object.entries(map).forEach(([k,v])=>{
-    const dot=$('#d-'+k);
-    if(dot) dot.className='dot '+(v?'dot-green':(v===false?'dot-red':'dot-off'));
-  });
-  if(d.gpu){ $('#gpuSt').textContent=d.gpu.name||'Active'; $('#gpuCo').textContent=d.gpu.cost||'—'; }
-  if(d.local_model) $('#llmMod').textContent=d.local_model;
-  if(d.ram) $('#llmRam').textContent=d.ram;
-  if(d.cache_count!=null) $('#cacheN').textContent=d.cache_count+' responses';
-  if(d.cached!=null) $('#cacheN').textContent=d.cached+' responses';
-}
-
-function updateCounters(cost,tok){
-  if(cost){ S.cost+=cost; $('#gCost').textContent=fmtCost(S.cost); }
-  if(tok){ S.tokens+=tok; $('#gTok').textContent=fmtTok(S.tokens); }
-}
-
-function addHist(task,tier,time,cost){
-  S.hist.unshift({task,tier,time,cost});
-  if(S.hist.length>10) S.hist.pop();
-  const box=$('#histBox'), none=$('#histNone');
-  none.style.display=S.hist.length?'none':'block';
-  box.innerHTML=S.hist.map(t=>`<div class="task-item"><span class="pill pill-ghost">${t.tier||'—'}</span><span class="tt">${esc(t.task)}</span><span class="tm">${t.time||'—'}</span></div>`).join('');
-}
-
-// ═══════════════════════════════════════════════════════════════
-// WebSocket
-// ═══════════════════════════════════════════════════════════════
-let wsRetryDelay = 1000, wsRetryTimer = null;
-
-function wsConnect(){
-  if(S.ws && (S.ws.readyState===0||S.ws.readyState===1)) return;
-  wsSetBadge('try');
-  try { S.ws = new WebSocket(WS_URL); } catch(e){ wsSetBadge('off'); wsRetry(); return; }
-  S.ws.onopen = ()=>{ S.wsOk=true; wsRetryDelay=1000; wsSetBadge('on'); };
-  S.ws.onclose = ()=>{ S.wsOk=false; wsSetBadge('off'); wsRetry(); };
-  S.ws.onerror = ()=>{ S.wsOk=false; wsSetBadge('off'); };
-  S.ws.onmessage = e=>{ try{handleWS(JSON.parse(e.data))}catch(er){} };
-}
-function wsRetry(){ if(wsRetryTimer) clearTimeout(wsRetryTimer); wsRetryTimer=setTimeout(()=>{ wsRetryDelay=Math.min(wsRetryDelay*1.5,30000); wsConnect(); },wsRetryDelay); }
-function wsSetBadge(st){
-  const b=$('#wsBadge'), dot=b.querySelector('.dot'), txt=b.querySelector('span:last-child');
-  b.className='ws-pill '+st;
-  dot.className='dot '+(st==='on'?'dot-green':st==='try'?'dot-amber':'dot-red');
-  dot.style.width='5px';dot.style.height='5px';dot.style.boxShadow='none';
-  txt.textContent=st==='on'?'Live':st==='try'?'Connecting':'Offline';
-}
-
-function handleWS(d){
-  const type = d.type||d.event;
-  switch(type){
-    case 'route': {
-      hideTraceEmpty();
-      // Create root task node
-      const taskId='trace-task-'+uid();
-      const taskNode=makeNode(taskId,{label:'Task: '+(d.task||'Processing...'),depth:0,status:'run',type:'task',
-        badges:[{cls:'model',text:d.route||d.tier||'routing'}]});
-      traceBody.insertBefore(taskNode,traceEmpty);
-      taskNode._taskId=taskId;
-      S._currentTaskId=taskId;
-
-      // Planning child node
-      const planId='trace-plan-'+uid();
-      const planNode=makeNode(planId,{label:'🧠 Planning...',depth:1,status:'run',type:'plan'});
-      addNodeChild(taskId,planNode);
-      S._currentPlanId=planId;
-      break;
-    }
-    case 'plan': {
-      // Complete planning node
-      if(S._currentPlanId){
-        const planTime = d.plan_time ? fmtSec(d.plan_time) : '—';
-        setNodeStatus(S._currentPlanId,'done',[
-          {cls:'model',text:d.model||'GPT-4.1-nano'},
-          {cls:'time',text:planTime}
-        ]);
-        const pn=document.getElementById(S._currentPlanId);
-        if(pn){ pn.querySelector('.tnode-label').textContent='📋 Plan ready'; }
-      }
-      // Create agent child nodes
-      if(d.agents && Array.isArray(d.agents)){
-        d.agents.forEach((ag,i)=>{
-          const agId='trace-ag-'+i+'-'+uid();
-          const isLocal = ag.provider==='local';
-          const badges=[
-            {cls:isLocal?'prov-local':'prov-cloud',text:isLocal?'🔒 local':'☁️ cloud'}
-          ];
-          if(ag.uncensored) badges.push({cls:'uncensored',text:'uncensored'});
-          const agNode=makeNode(agId,{label:ag.role||ag.name||'Agent '+(i+1),depth:1,status:'queue',type:'agent',badges});
-          if(S._currentTaskId) addNodeChild(S._currentTaskId,agNode);
-          ag._nodeId=agId;
-
-          // Store for later updates
-          if(!S._agentNodes) S._agentNodes=[];
-          S._agentNodes[i]={id:agId,agent:ag};
-        });
-      }
-      break;
-    }
-    case 'agent_status': {
-      if(d.index!=null && S._agentNodes && S._agentNodes[d.index]){
-        const an = S._agentNodes[d.index];
-        if(d.status==='running'||d.status==='run'){
-          setNodeStatus(an.id,'run');
-          // Start timer
-          const start=performance.now();
-          const node=document.getElementById(an.id);
-          const timerBadge=ce('span'); timerBadge.className='tnode-badge time'; timerBadge.textContent='0.0s';
-          if(node) node.querySelector('.tnode-meta').appendChild(timerBadge);
-          S.timers[an.id]={start, iv:setInterval(()=>{
-            timerBadge.textContent=fmtSec((performance.now()-start)/1000);
-          },100), badge:timerBadge};
-        } else if(d.status==='done'||d.status==='ok'){
-          // Stop timer
-          if(S.timers[an.id]){
-            clearInterval(S.timers[an.id].iv);
-            const elapsed=(performance.now()-S.timers[an.id].start)/1000;
-            S.timers[an.id].badge.textContent=d.latency?fmtSec(d.latency):fmtSec(elapsed);
-          }
-          const badges=[];
-          if(d.tokens) badges.push({cls:'tok',text:fmtTok(d.tokens)+' tok'});
-          if(d.cost) badges.push({cls:'cost',text:fmtCost(d.cost)});
-          setNodeStatus(an.id,'done',badges);
-          if(d.output||d.result) setNodeOutput(an.id,d.output||d.result);
-          updateTraceTotals(d.cost,d.tokens);
-        } else if(d.status==='error'||d.status==='err'){
-          if(S.timers[an.id]) clearInterval(S.timers[an.id].iv);
-          setNodeStatus(an.id,'err');
-          if(d.output||d.error) setNodeOutput(an.id,d.output||d.error||'Error');
-        }
-      }
-      break;
-    }
-    case 'result': {
-      rmTyping();
-      S.busy=false; btnSend.disabled=false; chatInput.disabled=false;
-      // Complete task node
-      if(S._currentTaskId){
-        const badges=[];
-        if(d.latency_s) badges.push({cls:'time',text:fmtSec(d.latency_s)});
-        if(d.cost_usd) badges.push({cls:'cost',text:fmtCost(d.cost_usd)});
-        setNodeStatus(S._currentTaskId,'done',badges);
-      }
-      if(d.output){
-        const route = d.route || {};
-        addMsg('system',d.output,{
-          tier:route.tier||d.tier, model:route.model||d.model,
-          tokens:d.total_tokens||d.tokens, cost:d.cost_usd||d.cost,
-          time:d.latency_s?fmtSec(d.latency_s):'—'
-        });
-      }
-      updateCounters(d.cost_usd||d.cost, d.total_tokens||d.tokens);
-      updateTraceTotals(d.cost_usd||d.cost, d.total_tokens||d.tokens);
-
-      const sr=d.specialist_results||[];
-      addTraceSummary({
-        done:sr.filter(r=>r.status!=='error').length, total:sr.length,
-        planTime:d.plan_time?fmtSec(d.plan_time):null,
-        execTime:d.exec_time?fmtSec(d.exec_time):null,
-        totalTime:d.latency_s?fmtSec(d.latency_s):null,
-        tokens:d.total_tokens||d.tokens, cost:d.cost_usd||d.cost,
-        hasErrors:sr.some(r=>r.status==='error')
-      });
-      beep();
-      S._agentNodes=null; S._currentTaskId=null; S._currentPlanId=null;
-      break;
-    }
-    case 'status': updateStatus(d); break;
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════
-// API calls
-// ═══════════════════════════════════════════════════════════════
-async function apiReady(){
-  try {
-    const r=await fetch(API+'/ready');
-    if(r.ok){ const d=await r.json(); updateStatus(d); }
-  } catch(e){ updateStatus({checks:{gateway:{status:'error'}}}); }
-}
-
-async function apiRun(task, files){
-  if(files && files.length){
-    // Multipart upload
-    const fd = new FormData();
-    fd.append('task', task);
-    files.forEach(f=> fd.append('files[]', f));
-    const r = await fetch(API+'/run/media', {method:'POST', body:fd});
-    if(!r.ok) throw new Error(`HTTP ${r.status}`);
-    return r.json();
-  }
-  const r = await fetch(API+'/run', {
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({task, turns:0})
-  });
-  if(!r.ok) throw new Error(`HTTP ${r.status}`);
-  return r.json();
-}
-
-// ═══════════════════════════════════════════════════════════════
-// SEND
-// ═══════════════════════════════════════════════════════════════
-async function handleSend(){
-  const text=chatInput.value.trim();
-  if((!text && !S.files.length) || S.busy) return;
-  S.busy=true; btnSend.disabled=true; chatInput.disabled=true;
-
-  // Prepare file previews for chat display
-  const chatFiles = S.files.map(f=>({
-    name:f.name, type:f.type,
-    previewUrl: f.type.startsWith('image/')||f.type.startsWith('video/') ? URL.createObjectURL(f) : null
-  }));
-  const uploadFiles = [...S.files];
-  S.files=[]; renderFilePreviews();
-
-  addMsg('user', text||'[file upload]', null, chatFiles);
-  chatInput.value=''; chatInput.style.height='auto';
-
-  // Clear & build trace tree
-  clearTrace(); hideTraceEmpty();
-
-  // Root task node
-  const taskId='trace-task-'+uid();
-  const taskNode=makeNode(taskId,{label:'Task: '+(text||'Processing...').slice(0,60),depth:0,status:'run',type:'task'});
-  traceBody.insertBefore(taskNode,traceEmpty);
-  S._currentTaskId=taskId;
-
-  // Planning node
-  const planId='trace-plan-'+uid();
-  const planNode=makeNode(planId,{label:'🧠 Planning...',depth:1,status:'run',type:'plan'});
-  addNodeChild(taskId,planNode);
-  S._currentPlanId=planId;
-
-  addTyping();
-
-  try {
-    const data = await apiRun(text, uploadFiles);
-    rmTyping();
-
-    if(data){
-      // Route info
-      const route = data.route || {};
-      const model = route.model || data.model || 'openai/gpt-4.1-nano';
-      const tier = route.tier || data.tier || 'fast';
-
-      // Complete planning
-      setNodeStatus(planId,'done',[
-        {cls:'model',text:model},
-        {cls:'time',text:data.plan_time?fmtSec(data.plan_time):'—'}
-      ]);
-      const pn=document.getElementById(planId);
-      if(pn) pn.querySelector('.tnode-label').textContent='📋 Plan ready ('+tier+')';
-
-      // Specialist results → agent nodes
-      const specialists = data.specialist_results||[];
-      S._agentNodes=[];
-
-      specialists.forEach((sr,i)=>{
-        const agId='trace-ag-'+i+'-'+uid();
-        const isLocal=sr.provider==='local';
-        const badges=[
-          {cls:isLocal?'prov-local':'prov-cloud',text:isLocal?'🔒 local':'☁️ cloud'},
-        ];
-        if(sr.uncensored) badges.push({cls:'uncensored',text:'uncensored'});
-        if(sr.latency) badges.push({cls:'time',text:typeof sr.latency==='number'?fmtSec(sr.latency):sr.latency});
-        if(sr.tokens) badges.push({cls:'tok',text:fmtTok(sr.tokens)+' tok'});
-
-        const status = sr.status==='error'||sr.status==='err'?'err':'done';
-        const agNode=makeNode(agId,{
-          label:sr.role||'Agent '+(i+1), depth:1, status, type:'agent', badges
-        });
-        addNodeChild(taskId,agNode);
-        if(sr.output||sr.result) setNodeOutput(agId,sr.output||sr.result||'');
-        S._agentNodes[i]={id:agId};
-        updateTraceTotals(sr.cost,sr.tokens);
-      });
-
-      // Complete root task
-      const taskBadges=[];
-      if(data.latency_s) taskBadges.push({cls:'time',text:fmtSec(data.latency_s)});
-      if(data.cost_usd) taskBadges.push({cls:'cost',text:fmtCost(data.cost_usd)});
-      setNodeStatus(taskId,'done',taskBadges);
-
-      // Chat message
-      const meta = {
-        tier, model,
-        tokens:data.total_tokens||data.tokens,
-        cost:data.cost_usd||data.cost,
-        time:data.latency_s?fmtSec(data.latency_s):'—'
-      };
-
-      addMsg('system', data.output||'Task completed.', meta);
-      updateCounters(meta.cost, meta.tokens);
-
-      // Summary bar
-      addTraceSummary({
-        done:specialists.filter(r=>r.status!=='error'&&r.status!=='err').length,
-        total:specialists.length,
-        planTime:data.plan_time?fmtSec(data.plan_time):null,
-        execTime:data.exec_time?fmtSec(data.exec_time):null,
-        totalTime:data.latency_s?fmtSec(data.latency_s):null,
-        tokens:meta.tokens, cost:meta.cost,
-        hasErrors:specialists.some(r=>r.status==='error'||r.status==='err')
-      });
-
-      addHist((text||'upload').slice(0,60), tier, meta.time, fmtCost(meta.cost));
-      beep();
-    }
-  } catch(e){
-    rmTyping();
-    // Fail the trace
-    setNodeStatus(planId,'err');
-    setNodeStatus(taskId,'err');
-    const pn=document.getElementById(planId);
-    if(pn) pn.querySelector('.tnode-label').textContent='❌ Request failed';
-
-    addMsg('system',`**Error:** ${e.message}\n\nMake sure the NCore Gateway is running at \`${API}\`.`,{tier:'error',time:'—'});
-  }
-  S.busy=false; btnSend.disabled=false; chatInput.disabled=false; chatInput.focus();
-}
-
-// ═══════════════════════════════════════════════════════════════
-// Init
-// ═══════════════════════════════════════════════════════════════
-function init(){
-  apiReady();
-  setInterval(apiReady, 30000);
-  wsConnect();
-  chatInput.focus();
-}
-// Auto-collapse trace on mobile
-function checkMobile(){
-  if(window.innerWidth <= 768){
-    trP.classList.add('collapsed');
-    togT.classList.add('show');
-  }
-}
-
-document.readyState==='loading' ? document.addEventListener('DOMContentLoaded',()=>{init();checkMobile();}) : (init(),checkMobile());
+// Expose for testing & external triggers
+window.handleWSEvent = handleWSEvent;
+window.addChatMessage = addChatMessage;
+window.getTasksMap = () => tasks;
 
 })();
 </script>
