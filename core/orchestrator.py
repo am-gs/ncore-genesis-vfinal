@@ -756,9 +756,10 @@ async def readiness_check():
     if vast_key:
         try:
             resp = await client.get(
-                "https://console.vast.ai/api/v0/users/current",
+                "https://console.vast.ai/api/v0/users/current/",
                 headers={"Authorization": f"Bearer {vast_key}"},
                 timeout=5,
+                follow_redirects=True,
             )
             checks["vastai"] = {"status": "ok" if resp.status_code == 200 else "error"}
         except Exception as e:
