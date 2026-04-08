@@ -77,7 +77,7 @@ async def call_local(client: httpx.AsyncClient, messages: list,
     """Call local llama-server (dolphin3 uncensored, 4 parallel slots)."""
     r = await client.post(f"{LOCAL_URL}/v1/chat/completions", json={
         "messages": messages, "max_tokens": max_tokens, "temperature": temperature,
-    }, timeout=90.0)
+    }, timeout=180.0)  # 3 min — parallel agents queue on 4 slots
     r.raise_for_status()
     return r.json()["choices"][0]["message"]["content"]
 
@@ -132,42 +132,42 @@ def decompose_campaign(task: str) -> list[dict]:
     subtasks.append({
         "name": "Brand Strategist",
         "prompt": f"You are a brand strategist. Analyze this request and define: brand voice, target audience, key messaging pillars, and competitive positioning.\n\nRequest: {task}",
-        "max_tokens": 400,
+        "max_tokens": 250,
     })
 
     if any(kw in text for kw in ["website", "web design", "landing page", "site", "webpage"]):
         subtasks.append({
             "name": "Web Designer",
-            "prompt": f"You are a web designer. Create a complete website structure with page layouts, sections, color scheme, and content plan.\n\nRequest: {task}",
-            "max_tokens": 500,
+            "prompt": f"You are a web designer. Create a complete website structure with page layouts, sections, color scheme, and content plan. Be concise.\n\nRequest: {task}",
+            "max_tokens": 300,
         })
 
     if any(kw in text for kw in ["seo", "search engine", "indexing", "keywords", "ranking"]):
         subtasks.append({
             "name": "SEO Specialist",
-            "prompt": f"You are an SEO specialist. Create a complete SEO strategy: target keywords, meta titles/descriptions, schema markup plan, sitemap structure, and indexing strategy.\n\nRequest: {task}",
-            "max_tokens": 400,
+            "prompt": f"You are an SEO specialist. Create a complete SEO strategy: target keywords, meta titles/descriptions, schema markup plan. Be concise.\n\nRequest: {task}",
+            "max_tokens": 250,
         })
 
     if any(kw in text for kw in ["content", "copy", "blog", "article", "writing"]):
         subtasks.append({
             "name": "Content Writer",
-            "prompt": f"You are a content writer. Write compelling website copy, headlines, and CTAs for all main pages.\n\nRequest: {task}",
-            "max_tokens": 500,
+            "prompt": f"You are a content writer. Write compelling website copy, headlines, and CTAs for the main pages. Be concise.\n\nRequest: {task}",
+            "max_tokens": 300,
         })
 
     if any(kw in text for kw in ["social media", "social", "instagram", "twitter", "linkedin", "facebook", "online presence"]):
         subtasks.append({
             "name": "Social Media Manager",
-            "prompt": f"You are a social media manager. Create account setup plans, bios, and 3 launch posts per platform (Twitter, LinkedIn, Instagram, Facebook).\n\nRequest: {task}",
-            "max_tokens": 500,
+            "prompt": f"You are a social media manager. Create account bios and 2 launch posts per platform (Twitter, LinkedIn, Instagram). Be concise.\n\nRequest: {task}",
+            "max_tokens": 300,
         })
 
     if any(kw in text for kw in ["rebrand", "brand", "logo", "identity", "campaign"]):
         subtasks.append({
             "name": "Brand Designer",
-            "prompt": f"You are a brand designer. Define the complete visual identity: logo concept, color palette (hex codes), typography, and brand guidelines.\n\nRequest: {task}",
-            "max_tokens": 400,
+            "prompt": f"You are a brand designer. Define visual identity: logo concept, color palette (hex codes), typography. Be concise.\n\nRequest: {task}",
+            "max_tokens": 250,
         })
 
     # If none matched, treat as single task
