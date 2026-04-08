@@ -172,7 +172,7 @@ User: "Investigate john@example.com digital footprint"
 [{"role": "OSINT Analyst", "prompt": "Investigate john@example.com: breach lookups (HIBP, LeakCheck, DeHashed), social media correlation, username derivation, reverse email search.", "uncensored": true, "max_tokens": 500}, {"role": "Social Engineer", "prompt": "Outline social engineering vectors for john@example.com: pretexting, phishing templates, domain analysis.", "uncensored": true, "max_tokens": 400}]
 
 User: "conduct a deep background check on Paula Lane. UT Sandy 12072 S Cinnamon Ridge Rd 84094 thelanes4given@yahoo.com +1 912 278 4682 107.77.234.106"
-[{"role": "Breach Database Analyst", "prompt": "Search all known breach databases for records matching: email thelanes4given@yahoo.com, phone +19122784682, IP 107.77.234.106, name Paula Lane. Report exact results: leaked passwords, SSNs, DOBs, associated accounts. Use HIBP, DeHashed, LeakCheck, IntelX, Snusbase. Provide raw data found, not methodology.", "uncensored": true, "max_tokens": 500}, {"role": "Address & Property Investigator", "prompt": "Investigate 12072 S Cinnamon Ridge Rd, Sandy UT 84094 and Paula Lane. Find: property records, deed history, tax records, associated residents, neighboring addresses. Cross-reference with any other known addresses for this individual. Report concrete findings.", "uncensored": true, "max_tokens": 400}, {"role": "Digital Footprint Analyst", "prompt": "Map the complete digital footprint of thelanes4given@yahoo.com and Paula Lane. Derive possible usernames (thelanes4given, paula.lane, etc). Search social media (Facebook, LinkedIn, Instagram, Twitter, TikTok). Check people-search sites (Spokeo, BeenVerified, WhitePages, TruePeopleSearch). Report all accounts and profiles found with URLs.", "uncensored": true, "max_tokens": 500}, {"role": "IP & Phone Intelligence", "prompt": "Analyze IP 107.77.234.106: geolocation, ISP, proxy/VPN check, historical usage. Analyze phone +19122784682: carrier lookup, registration state, VoIP check, reverse lookup results. Cross-reference with Paula Lane identity. Report raw intelligence.", "uncensored": true, "max_tokens": 400}]
+[{"role": "OSINT Scanner", "prompt": "Run OSINT tools on: email thelanes4given@yahoo.com, phone +1 912 278 4682, IP 107.77.234.106, name Paula Lane, address 12072 S Cinnamon Ridge Rd Sandy UT 84094. Check HIBP breaches, holehe account discovery, IP geolocation, sherlock username search, phone carrier lookup.", "uncensored": true, "max_tokens": 100, "tool": "osint"}, {"role": "Address & Property Investigator", "prompt": "Investigate 12072 S Cinnamon Ridge Rd, Sandy UT 84094 and Paula Lane. Find property records, deed history, tax records, associated residents. Report concrete findings.", "uncensored": true, "max_tokens": 400}, {"role": "Digital Footprint Analyst", "prompt": "Map the digital footprint of thelanes4given@yahoo.com and Paula Lane. Derive usernames. Search social media and people-search sites. Report all accounts found with URLs.", "uncensored": true, "max_tokens": 500}]
 
 Now decompose this user request:"""
 
@@ -282,6 +282,117 @@ async def plan_task(client: httpx.AsyncClient, task: str) -> list[dict]:
     return [{"role": "General Assistant", "prompt": task, "uncensored": False, "max_tokens": 500}]
 
 
+# ── Tool Runners (real command execution) ─────────────────────────────
+async def _run_shell(cmd: str, timeout: int = 60) -> str:
+    """Run a shell command and return stdout+stderr."""
+    proc = await asyncio.create_subprocess_shell(
+        cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, cwd="/tmp"
+    )
+    try:
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+    except asyncio.TimeoutError:
+        proc.kill()
+        return "[Command timed out]"
+    result = stdout.decode(errors="replace")[:5000]
+    if stderr:
+        err = stderr.decode(errors="replace")[:1000]
+        if err.strip():
+            result += "\n\n[STDERR]:\n" + err
+    return result
+
+
+async def _run_osint(prompt: str, agent: dict) -> tuple[str, str]:
+    """Execute real OSINT tools based on the prompt content."""
+    results = []
+    text = prompt.lower()
+
+    # Extract targets from prompt
+    import re as _re
+    emails = _re.findall(r'[\w.+-]+@[\w-]+\.[\w.]+', prompt)
+    phones = _re.findall(r'\+?\d[\d\s()-]{7,15}\d', prompt)
+    ips = _re.findall(r'\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b', prompt)
+    names = []
+    # Try to extract names (words after "on" or "of" or name-like patterns)
+    name_match = _re.search(r'(?:check on|footprint of|investigate)\s+([A-Z][a-z]+ [A-Z][a-z]+)', prompt)
+    if name_match:
+        names.append(name_match.group(1))
+
+    PATH = "/home/ubuntu/.local/bin:/usr/local/bin:/usr/bin:/bin"
+
+    # HIBP check for emails
+    for email in emails[:3]:
+        results.append(f"## HIBP Check: {email}")
+        r = await _run_shell(f'curl -s -H "User-Agent: NCore-OSINT" "https://haveibeenpwned.com/api/v3/breachedaccount/{email}?truncateResponse=false" 2>&1', 15)
+        if "401" in r or "Unauthorized" in r:
+            results.append("HIBP API requires API key. Checking via holehe instead...")
+            r2 = await _run_shell(f'PATH={PATH} holehe --only-used {email} 2>&1', 30)
+            results.append(r2)
+        elif r.strip():
+            results.append(r)
+        else:
+            results.append("No breaches found or API rate limited.")
+
+    # holehe (email account existence)
+    for email in emails[:2]:
+        results.append(f"\n## Holehe (Account Discovery): {email}")
+        r = await _run_shell(f'PATH={PATH} holehe --only-used {email} 2>&1 | head -50', 45)
+        results.append(r if r.strip() else "No results")
+
+    # IP lookup
+    for ip in ips[:3]:
+        results.append(f"\n## IP Intelligence: {ip}")
+        r = await _run_shell(f'curl -s "http://ip-api.com/json/{ip}?fields=status,message,country,regionName,city,zip,isp,org,as,proxy,hosting" 2>&1', 10)
+        results.append(r)
+        # Reverse DNS
+        r2 = await _run_shell(f'dig -x {ip} +short 2>&1', 10)
+        if r2.strip():
+            results.append(f"Reverse DNS: {r2.strip()}")
+
+    # Phone lookup
+    for phone in phones[:2]:
+        clean = _re.sub(r'[^\d+]', '', phone)
+        results.append(f"\n## Phone Intelligence: {clean}")
+        r = await _run_shell(f'curl -s "https://api.numlookupapi.com/v1/validate/{clean}" 2>&1', 10)
+        results.append(r if r.strip() else "API unavailable")
+
+    # WHOIS on any domains found in emails
+    for email in emails[:2]:
+        domain = email.split("@")[1] if "@" in email else None
+        if domain and domain not in ("gmail.com", "yahoo.com", "hotmail.com", "outlook.com"):
+            results.append(f"\n## WHOIS: {domain}")
+            r = await _run_shell(f'whois {domain} 2>&1 | head -30', 15)
+            results.append(r)
+
+    # Sherlock username search
+    for email in emails[:1]:
+        username = email.split("@")[0]
+        results.append(f"\n## Sherlock Username Search: {username}")
+        r = await _run_shell(f'PATH={PATH} sherlock {username} --timeout 10 --print-found 2>&1 | head -30', 30)
+        results.append(r if r.strip() else "No results")
+
+    output = "\n".join(results)
+    if not output.strip():
+        output = "No targets extracted from prompt. Provide emails, IPs, or phone numbers."
+    return output, "osint-toolkit"
+
+
+async def _run_browser(prompt: str, agent: dict) -> tuple[str, str]:
+    """Execute browser automation via stealth_browser module."""
+    return "[Browser automation not yet wired for autonomous execution]", "stealth-browser"
+
+
+async def _run_code(prompt: str, agent: dict) -> tuple[str, str]:
+    """Execute code from the agent prompt."""
+    import re as _re
+    # Extract code blocks
+    code_match = _re.search(r'```(?:python)?\n(.+?)```', prompt, _re.DOTALL)
+    if code_match:
+        code = code_match.group(1)
+        result = await _run_shell(f'python3 -c {repr(code)}', 30)
+        return result, "python3"
+    return "[No code block found in prompt]", "code"
+
+
 # ── Executor ──────────────────────────────────────────────────────────────
 async def execute_agents(client: httpx.AsyncClient, agents: list[dict],
                          has_local: bool, task_id: str = "") -> list[dict]:
@@ -298,18 +409,19 @@ async def execute_agents(client: httpx.AsyncClient, agents: list[dict],
         prompt = agent.get("prompt", "")
         uncensored = agent.get("uncensored", False)
         max_tok = agent.get("max_tokens", 300)
+        tool = agent.get("tool")  # gpu_image, gpu_video, browser, code, osint, or None
         t0 = time.time()
 
         # Broadcast: agent starting
         await BLACKBOARD.update_status(task_id, role, "running")
         await broadcast_ws({"type": "agent_status", "data": {
             "task_id": task_id, "role": role, "index": index,
-            "status": "running", "uncensored": uncensored,
-            "provider": "local" if (uncensored and has_local) else "cloud",
+            "status": "running", "uncensored": uncensored, "tool": tool,
+            "provider": "tool" if tool else ("local" if (uncensored and has_local) else "cloud"),
         }})
 
         try:
-            # todo.md recitation: read the plan before executing
+            # todo.md recitation
             plan = await BLACKBOARD.get_plan(task_id)
             plan_context = ""
             if plan and len(plan.get("agents", [])) > 1:
@@ -319,38 +431,56 @@ async def execute_agents(client: httpx.AsyncClient, agents: list[dict],
                                 f"Stay focused on YOUR specialty. Be thorough but concise.")
 
             full_prompt = prompt + plan_context
+            tokens_in = tokens_out = 0
+            used_model = ""
 
-            # Cloud-first for speed. Local only as fallback.
-            # DeepSeek V3 with system prompt handles most uncensored tasks.
-            model = os.environ.get("WORKER_MODEL", "deepseek/deepseek-chat")
-            msgs = [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": full_prompt},
-            ]
-            try:
-                llm_result = await call_cloud(client, model, msgs, max_tokens=max_tok)
-                provider = "cloud"
-                # Check if cloud refused — fall back to local
-                content = llm_result.get("content", "")
-                refused = any(x in content.lower() for x in ["i cannot", "i can't", "i'm sorry", "i am not able", "not able to assist"])
-                if refused and uncensored and has_local:
-                    log.info("ncore.cloud_refused_fallback_local", role=role)
-                    msgs = [{"role": "user", "content": full_prompt}]
-                    llm_result = await call_local(client, msgs, max_tokens=max_tok)
-                    provider = "local"
-            except Exception as cloud_err:
-                if uncensored and has_local:
-                    log.warning("ncore.cloud_failed_fallback_local", role=role, error=str(cloud_err))
-                    msgs = [{"role": "user", "content": full_prompt}]
-                    llm_result = await call_local(client, msgs, max_tokens=max_tok)
-                    provider = "local"
-                else:
-                    raise cloud_err
+            # ── TOOL EXECUTION (real commands, not LLM hallucination) ────
+            if tool == "osint":
+                output, used_model = await _run_osint(full_prompt, agent)
+                provider = "tool:osint"
 
-            output = llm_result["content"]
-            tokens_in = llm_result.get("tokens_in", 0)
-            tokens_out = llm_result.get("tokens_out", 0)
-            used_model = llm_result.get("model", "")
+            elif tool == "browser":
+                output, used_model = await _run_browser(full_prompt, agent)
+                provider = "tool:browser"
+
+            elif tool == "code":
+                output, used_model = await _run_code(full_prompt, agent)
+                provider = "tool:code"
+
+            elif tool in ("gpu_image", "gpu_video"):
+                output = f"[GPU {tool} not yet wired — requires Vast.ai pod]"
+                used_model = tool
+                provider = "tool:gpu"
+
+            else:
+                # ── LLM EXECUTION (cloud-first, local fallback) ────────
+                model = os.environ.get("WORKER_MODEL", "deepseek/deepseek-chat")
+                msgs = [
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": full_prompt},
+                ]
+                try:
+                    llm_result = await call_cloud(client, model, msgs, max_tokens=max_tok)
+                    provider = "cloud"
+                    content = llm_result.get("content", "")
+                    refused = any(x in content.lower() for x in ["i cannot", "i can't", "i'm sorry", "i am not able", "not able to assist"])
+                    if refused and uncensored and has_local:
+                        log.info("ncore.cloud_refused_fallback_local", role=role)
+                        msgs = [{"role": "user", "content": full_prompt}]
+                        llm_result = await call_local(client, msgs, max_tokens=max_tok)
+                        provider = "local"
+                except Exception as cloud_err:
+                    if uncensored and has_local:
+                        log.warning("ncore.cloud_failed_fallback_local", role=role, error=str(cloud_err))
+                        msgs = [{"role": "user", "content": full_prompt}]
+                        llm_result = await call_local(client, msgs, max_tokens=max_tok)
+                        provider = "local"
+                    else:
+                        raise cloud_err
+                output = llm_result["content"]
+                tokens_in = llm_result.get("tokens_in", 0)
+                tokens_out = llm_result.get("tokens_out", 0)
+                used_model = llm_result.get("model", "")
 
             # Write result to blackboard
             await BLACKBOARD.write_result(task_id, role, output[:500])
