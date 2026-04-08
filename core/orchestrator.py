@@ -364,13 +364,45 @@ async def _run_osint(prompt: str, agent: dict) -> tuple[str, str]:
     for name in names[:2]:
         fn, ln = name.split(" ", 1) if " " in name else (name, "")
         state = ""
-        if zips:
-            # Derive state from context
-            for s in ["UT", "GA", "FL", "CA", "TX", "NY"]:
-                if s in prompt.upper(): state = s; break
-        # People search via web
-        tasks.append((f"PEOPLE SEARCH: {name}",
-            _run_shell(f'curl -s -A "Mozilla/5.0" -L "https://www.fastpeoplesearch.com/name/{fn.lower()}-{ln.lower()}" 2>&1 | grep -oP "(?<=<title>).*?(?=</title>)" | head -1', 15)))
+        for s in ["UT", "GA", "FL", "CA", "TX", "NY", "OH", "IL", "PA", "NC"]:
+            if s in prompt.upper(): state = s; break
+        city = ""
+        # Extract city from prompt (word before state abbreviation or zip)
+        city_match = _re.search(r'(?:^|\|)([A-Z][a-z]+)(?:\||\s+' + state + r')', prompt) if state else None
+        if city_match: city = city_match.group(1)
+
+        # Browser-based people search (parallel)
+        async def _people_search(n=name, c=city, s=state):
+            try:
+                from people_search import full_people_search
+                email = emails[0] if emails else ""
+                phone = phones[0] if phones else ""
+                ip = ips[0] if ips else ""
+                addr = addresses[0] if addresses else ""
+                result = await full_people_search(
+                    name=n, city=c, state=s,
+                    email=email, phone=phone, ip=ip, address=addr
+                )
+                # Format results
+                parts = []
+                for src, data in result.items():
+                    if src.startswith("_"): continue
+                    if isinstance(data, dict):
+                        if data.get("error"):
+                            parts.append(f"{src}: {data['error']}")
+                        elif data.get("results"):
+                            parts.append(f"{src} ({data.get('count', 0)} results):")
+                            for r in data["results"][:3]:
+                                parts.append(json_lib.dumps(r, indent=2))
+                        elif data.get("owner") or data.get("assessed_value"):
+                            parts.append(f"{src}:")
+                            parts.append(json_lib.dumps({k:v for k,v in data.items() if not k.startswith("raw") and k != "source"}, indent=2))
+                return "\n".join(parts) if parts else "No results from people search sites"
+            except Exception as e:
+                return f"People search error: {e}"
+
+        tasks.append((f"PEOPLE SEARCH (Browser): {name}",
+            _people_search()))
 
     if not tasks:
         return "No targets extracted. Provide emails, IPs, phone numbers, or names.", "osint-toolkit"
