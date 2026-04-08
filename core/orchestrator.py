@@ -474,7 +474,7 @@ Be thorough. Execute every tool. Report raw data, not summaries."""
             r = await app.state.http.post(
                 f"{d['endpoint']}/api/chat",
                 json=ollama_payload,
-                timeout=120.0
+                timeout=300.0  # Ollama on ARM CPU needs longer for first load + generation
             )
             r.raise_for_status()
             output = r.json().get("message", {}).get("content", "")
