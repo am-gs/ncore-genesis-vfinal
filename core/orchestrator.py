@@ -206,8 +206,8 @@ async def node_route(state: AgentState) -> AgentState:
 async def node_enhance(state: AgentState) -> AgentState:
     """Heuristic prompt enhancement before LLM execution (FIX 4)."""
     d = state["route"]
-    # Skip enhancement for trivial/fast tier and media tasks
-    if d["tier"] in ("fast", "image", "video"):
+    # Skip enhancement for fast/simple/local/media tiers — only enhance complex cloud tasks
+    if d["tier"] in ("fast", "image", "video", "free_coder", "investigation", "uncensored_local", "uncensored"):
         return state
 
     try:
@@ -235,8 +235,8 @@ async def node_discover(state: AgentState) -> AgentState:
     Skips for trivial/fast tasks to avoid latency.
     """
     d = state["route"]
-    # Skip discovery for trivial tasks and cached/known patterns
-    if d["tier"] in ("fast",):
+    # Skip discovery for fast/simple/local tiers — only discover for complex cloud tasks
+    if d["tier"] in ("fast", "free_coder", "investigation", "uncensored_local", "uncensored", "image", "video"):
         return state
 
     try:
@@ -375,93 +375,38 @@ async def node_execute(state: AgentState) -> AgentState:   # C2: now truly async
             output = f"❌ {pod_type.title()} generation failed: {e}"
             return {**state, "output": output, "cost_usd": 0, "latency_s": time.time() - t0}
 
-    # ── INVESTIGATION tasks (Agent Zero autonomous tool execution) ────────────
-    if d["provider"] == "agent-zero" or d["tier"] == "investigation":
+    # ── INVESTIGATION tasks — fast path via OpenRouter, local Ollama fallback ───
+    if d["tier"] == "investigation":
+        # v7.6.3: Route investigation to OpenRouter FREE_REASONING (DeepSeek R1 free)
+        # instead of slow local Ollama. Only fall back to local if OpenRouter fails.
+        investigation_model = os.environ.get("FREE_REASONING", "deepseek/deepseek-r1:free")
+        api_key = os.environ.get("OPENROUTER_API_KEY", "")
+        log.info("ncore.investigation_openrouter", model=investigation_model)
         try:
-            from agent_zero_bridge import AgentZeroBridge
-            az = AgentZeroBridge()
-
-            if not await az.is_available():
-                # Fallback: use uncensored local model if Agent Zero is down
-                log.warning("ncore.agent_zero_unavailable", fallback="ollama")
-                d["provider"] = "ollama"
-                d["model"] = os.environ.get("UNCENSORED_LOCAL", "huihui_ai/qwen3.5-abliterated:35b-a3b")
-                d["endpoint"] = "http://localhost:11434"
-                # Fall through to Ollama handler below
-            else:
-                # Build investigation-specific prompt with extracted entities
-                enhanced_task = state["task"]
-
-                # Extract entities for structured investigation
-                from prompt_enhancer import extract_indicators
-                indicators = extract_indicators(state["task"])
-
-                entity_context = ""
-                if indicators.get("names"):
-                    entity_context += f"\nTarget name(s): {', '.join(indicators['names'])}"
-                if indicators.get("addresses"):
-                    entity_context += f"\nTarget address(es): {', '.join(indicators['addresses'])}"
-                if indicators.get("emails"):
-                    entity_context += f"\nKnown email(s): {', '.join(indicators['emails'])}"
-                if indicators.get("phones"):
-                    entity_context += f"\nKnown phone(s): {', '.join(indicators['phones'])}"
-
-                investigation_prompt = f"""{enhanced_task}
-
-{entity_context}
-
-EXECUTE THIS INVESTIGATION AUTONOMOUSLY. Use ALL available tools:
-1. Search breach databases (h8mail, HIBP API, LeakCheck) for any discovered emails
-2. Username/social media search (sherlock, maigret) for the target name
-3. Public records lookup (web search, property records, court records)
-4. Phone/address verification (NumVerify, reverse lookup)
-5. Dark web / paste search (IntelX API) if available
-6. Compile ALL findings into a structured report with:
-   - Personal information found
-   - Online accounts discovered
-   - Breach/leak exposure
-   - Public records data
-   - Risk assessment score (0-100)
-   - Recommended next investigative steps
-
-Be thorough. Execute every tool. Report raw data, not summaries."""
-
-                await broadcast_ws({"type": "investigation", "data": {
-                    "target": indicators.get("names", ["unknown"])[0] if indicators.get("names") else "unknown",
-                    "tools": ["h8mail", "sherlock", "maigret", "HIBP", "web_search", "IntelX"],
-                    "status": "executing"
-                }})
-
-                result = await az.execute_task(investigation_prompt, timeout=300)
-
-                latency = time.time() - t0
-                cost = d["estimated_cost_usd"]
-
-                if result["success"]:
-                    output = result["output"]
-                    await broadcast_ws({"type": "investigation", "data": {
-                        "status": "complete",
-                        "steps": len(result.get("steps", [])),
-                        "duration_s": result["duration_s"]
-                    }})
-                else:
-                    output = f"Investigation partially completed:\n{result.get('output', '')}\n\nError: {result.get('error', 'unknown')}"
-
-                update_cost(d["tier"], cost)
-                await broadcast_ws({"type": "result", "data": {"tier": d["tier"], "model": "agent-zero", "latency_s": round(latency, 3), "cost_usd": cost}})
-                return {**state, "output": output, "cost_usd": cost, "latency_s": latency}
-
-        except ImportError:
-            log.warning("ncore.agent_zero_not_installed", fallback="ollama")
+            output = await _call_llm(
+                app.state.http,
+                "https://openrouter.ai/api/v1",
+                {"Authorization": f"Bearer {api_key}", "HTTP-Referer": "https://ncore.internal", "X-Title": "NCore Genesis"},
+                {"model": investigation_model, "messages": [{"role": "user", "content": state["task"]}],
+                 "temperature": 0.3, "max_tokens": 8192},
+            )
+            latency = time.time() - t0
+            cost = 0.0
+            update_cost(d["tier"], cost)
+            d["model"] = investigation_model
+            d["provider"] = "openrouter"
+            log.info("ncore.execute", tier="investigation", model=investigation_model, latency_s=round(latency, 3))
+            await broadcast_ws({"type": "result", "data": {"tier": d["tier"], "model": investigation_model, "latency_s": round(latency, 3), "cost_usd": cost, "output_preview": output[:200] if isinstance(output, str) else ""}})
+            return {**state, "output": output, "cost_usd": cost, "latency_s": latency, "route": d}
         except Exception as e:
-            log.warning("ncore.agent_zero_failed", error=str(e), fallback="ollama")
+            log.warning("ncore.investigation_openrouter_failed", error=str(e), fallback="ollama")
 
-        # Agent Zero failed — redirect to uncensored local model
+        # OpenRouter failed — fall back to local Ollama (Qwen 2.5 3B for speed)
         d["provider"] = "ollama"
-        d["model"] = os.environ.get("UNCENSORED_LOCAL", "huihui_ai/qwen3.5-abliterated:35b-a3b")
+        d["model"] = os.environ.get("LOCAL_FAST_MODEL", "qwen2.5:3b")
         d["endpoint"] = "http://localhost:11434"
         d["estimated_cost_usd"] = 0.0
-        log.info("ncore.investigation_fallback", model=d["model"])
+        log.info("ncore.investigation_fallback_local", model=d["model"])
 
     # ── OLLAMA tasks (local uncensored) (FIX 3) ──────────────────────────────
     if d["provider"] == "ollama":
@@ -470,6 +415,11 @@ Be thorough. Execute every tool. Report raw data, not summaries."""
                 "model": d["model"],
                 "messages": [{"role": "user", "content": state["task"]}],
                 "stream": False,
+                "options": {
+                    "num_predict": 2048,   # Cap tokens to prevent ARM CPU generation spirals
+                    "num_ctx": 4096,       # Context window
+                    "num_thread": 4,       # Match 4 ARM OCPUs
+                },
             }
             r = await app.state.http.post(
                 f"{d['endpoint']}/api/chat",
