@@ -215,7 +215,9 @@ async def run_pipeline(task: str, turns: int = 0) -> dict:
         except:
             pass
 
-        results = await run_parallel_agents(client, subtasks, use_local=local_ok)
+        # Use CLOUD for campaign agents (fast, parallel, no slot contention)
+        # Local llama-server reserved for single uncensored tasks
+        results = await run_parallel_agents(client, subtasks, use_local=False)
 
         # Aggregate results
         output_parts = []
