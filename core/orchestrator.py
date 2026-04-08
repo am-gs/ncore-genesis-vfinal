@@ -207,7 +207,8 @@ async def broadcast_ws(event: dict):
 
 # ── LLM Calls ─────────────────────────────────────────────────────────────
 async def call_cloud(client: httpx.AsyncClient, model: str, messages: list,
-                     max_tokens: int = 4096, temperature: float = 0.4) -> str:
+                     max_tokens: int = 4096, temperature: float = 0.4) -> dict:
+    """Returns {content, tokens_in, tokens_out, model} for full observability."""
     r = await client.post(f"{OPENROUTER_URL}/chat/completions", headers={
         "Authorization": f"Bearer {os.environ.get('OPENROUTER_API_KEY', '')}",
         "HTTP-Referer": "https://ncore.internal",
@@ -217,16 +218,31 @@ async def call_cloud(client: httpx.AsyncClient, model: str, messages: list,
         "max_tokens": max_tokens, "temperature": temperature,
     }, timeout=60.0)
     r.raise_for_status()
-    return r.json()["choices"][0]["message"]["content"]
+    data = r.json()
+    usage = data.get("usage", {})
+    return {
+        "content": data["choices"][0]["message"]["content"],
+        "tokens_in": usage.get("prompt_tokens", 0),
+        "tokens_out": usage.get("completion_tokens", 0),
+        "model": data.get("model", model),
+    }
 
 
 async def call_local(client: httpx.AsyncClient, messages: list,
-                     max_tokens: int = 300, temperature: float = 0.7) -> str:
+                     max_tokens: int = 300, temperature: float = 0.7) -> dict:
+    """Returns {content, tokens_in, tokens_out, model} for full observability."""
     r = await client.post(f"{LOCAL_URL}/v1/chat/completions", json={
         "messages": messages, "max_tokens": max_tokens, "temperature": temperature,
     }, timeout=180.0)
     r.raise_for_status()
-    return r.json()["choices"][0]["message"]["content"]
+    data = r.json()
+    usage = data.get("usage", {})
+    return {
+        "content": data["choices"][0]["message"]["content"],
+        "tokens_in": usage.get("prompt_tokens", 0),
+        "tokens_out": usage.get("completion_tokens", 0),
+        "model": data.get("model", "dolphin3-local"),
+    }
 
 
 async def local_available(client: httpx.AsyncClient) -> bool:
@@ -246,7 +262,8 @@ async def plan_task(client: httpx.AsyncClient, task: str) -> list[dict]:
         {"role": "user", "content": task},
     ]
     try:
-        raw = await call_cloud(client, planner_model, messages, max_tokens=1000, temperature=0.2)
+        result = await call_cloud(client, planner_model, messages, max_tokens=1000, temperature=0.2)
+        raw = result["content"]
         # Extract JSON from response (handle markdown code blocks)
         raw = raw.strip()
         if raw.startswith("```"):
@@ -302,7 +319,7 @@ async def execute_agents(client: httpx.AsyncClient, agents: list[dict],
 
             if uncensored and has_local:
                 msgs = [{"role": "user", "content": full_prompt}]
-                output = await call_local(client, msgs, max_tokens=max_tok)
+                llm_result = await call_local(client, msgs, max_tokens=max_tok)
                 provider = "local"
             else:
                 model = os.environ.get("WORKER_MODEL", "deepseek/deepseek-chat")
@@ -310,8 +327,13 @@ async def execute_agents(client: httpx.AsyncClient, agents: list[dict],
                     {"role": "system", "content": SYSTEM_PROMPT},
                     {"role": "user", "content": full_prompt},
                 ]
-                output = await call_cloud(client, model, msgs, max_tokens=max_tok)
+                llm_result = await call_cloud(client, model, msgs, max_tokens=max_tok)
                 provider = "cloud"
+
+            output = llm_result["content"]
+            tokens_in = llm_result.get("tokens_in", 0)
+            tokens_out = llm_result.get("tokens_out", 0)
+            used_model = llm_result.get("model", "")
 
             # Write result to blackboard
             await BLACKBOARD.write_result(task_id, role, output[:500])
@@ -319,10 +341,12 @@ async def execute_agents(client: httpx.AsyncClient, agents: list[dict],
             await broadcast_ws({"type": "agent_status", "data": {
                 "task_id": task_id, "role": role, "index": index,
                 "status": "done", "latency": round(time.time() - t0, 1),
+                "tokens_in": tokens_in, "tokens_out": tokens_out, "model": used_model,
             }})
 
             return {"role": role, "output": output, "latency": time.time() - t0,
-                    "status": "ok", "provider": provider, "uncensored": uncensored}
+                    "status": "ok", "provider": provider, "uncensored": uncensored,
+                    "tokens_in": tokens_in, "tokens_out": tokens_out, "model": used_model}
         except Exception as e:
             await BLACKBOARD.update_status(task_id, role, "error")
             await broadcast_ws({"type": "agent_status", "data": {
@@ -387,17 +411,25 @@ async def run_pipeline(task: str, turns: int = 0) -> dict:
         "total_time": round(total_time, 2),
     }})
 
+    total_tokens_in = sum(r.get("tokens_in", 0) for r in results)
+    total_tokens_out = sum(r.get("tokens_out", 0) for r in results)
+    total_tokens = total_tokens_in + total_tokens_out
+
     return {
         "output": output,
         "route": decision,
+        "task_id": task_id,
         "agents": len(results),
         "plan_time": plan_time,
         "exec_time": exec_time,
         "latency_s": total_time,
         "cost_usd": decision.get("estimated_cost_usd", 0),
+        "tokens": {"in": total_tokens_in, "out": total_tokens_out, "total": total_tokens},
         "specialist_results": [
             {"role": r["role"], "status": r["status"], "latency": r["latency"],
-             "provider": r["provider"], "uncensored": r["uncensored"]}
+             "provider": r["provider"], "uncensored": r["uncensored"],
+             "tokens_in": r.get("tokens_in", 0), "tokens_out": r.get("tokens_out", 0),
+             "model": r.get("model", "")}
             for r in results
         ],
     }
