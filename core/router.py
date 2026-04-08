@@ -69,14 +69,20 @@ class NCoreMasterRouter:
     """
 
     VIDEO_KW = [
-        "video", "animate", "animation", "motion", "footage", "clip",
-        "text to video", "image to video", "t2v", "i2v", "wan", "wan2",
-        "nsfw video", "adult video", "generate video"
+        "generate video", "create video", "make video", "make a video",
+        "text to video", "image to video", "t2v", "i2v", "wan2",
+        "animate this", "animate the", "nsfw video", "adult video",
     ]
     IMAGE_KW = [
-        "image", "picture", "photo", "illustration", "artwork", "render",
-        "generate image", "text to image", "stable diffusion", "flux",
-        "nsfw image", "adult image", "nude", "explicit image", "sdxl"
+        "generate image", "create image", "make image", "make a picture",
+        "text to image", "draw", "stable diffusion", "flux",
+        "nsfw image", "adult image", "generate a photo", "sdxl",
+    ]
+    # Keywords that BLOCK media routing even if VIDEO/IMAGE_KW match
+    ANALYSIS_OVERRIDE_KW = [
+        "analyze", "analysis", "review", "red team", "adversarial",
+        "investigate", "report", "audit", "design", "strategy",
+        "explain", "describe", "compare", "evaluate", "assess",
     ]
     TRIVIAL_RE = [
         r"^(what is|define|who is|when was|how many|what year)",
@@ -141,29 +147,34 @@ class NCoreMasterRouter:
     def route(self, task: str, turns: int = 0) -> dict:
         text   = task.lower().strip()
         tokens = len(task.split()) * 1.3
+        is_analysis = any(kw in text for kw in self.ANALYSIS_OVERRIDE_KW)
 
-        if any(kw in text for kw in self.VIDEO_KW):
-            return asdict(RouteDecision(
-                tier="video", model="wan-2.2-remix-nsfw",
-                provider="vast-pod", endpoint="dynamic", engine="vast-native",
-                reason="Video generation → Vast pod",
-                estimated_cost_usd=0.25, requires_pod=True,
-                pod_spec={"type":"video","image":"vastai/comfyui-wan22:latest",
-                          "gpu":"RTX_4090","gpu_ram":24,"disk_gb":100,"startup_wait_sec":120}
-            ))
-        if any(kw in text for kw in self.IMAGE_KW):
-            return asdict(RouteDecision(
-                tier="image", model="flux-1-dev",
-                provider="vast-pod", endpoint="dynamic", engine="vast-native",
-                reason="Image generation → Vast pod",
-                estimated_cost_usd=0.03, requires_pod=True,
-                pod_spec={"type":"image","image":"vastai/comfyui-flux:latest",
-                          "gpu":"RTX_4090","gpu_ram":24,"disk_gb":50,"startup_wait_sec":60}
-            ))
+        # L0: Media detection — only if NOT an analysis/report task
+        if not is_analysis:
+            if any(kw in text for kw in self.VIDEO_KW):
+                return asdict(RouteDecision(
+                    tier="video", model="wan-2.2-remix-nsfw",
+                    provider="vast-pod", endpoint="dynamic", engine="vast-native",
+                    reason="Video generation → Vast pod",
+                    estimated_cost_usd=0.25, requires_pod=True,
+                    pod_spec={"type":"video","image":"vastai/comfyui-wan22:latest",
+                              "gpu":"RTX_4090","gpu_ram":24,"disk_gb":100,"startup_wait_sec":120}
+                ))
+            if any(kw in text for kw in self.IMAGE_KW):
+                return asdict(RouteDecision(
+                    tier="image", model="flux-1-dev",
+                    provider="vast-pod", endpoint="dynamic", engine="vast-native",
+                    reason="Image generation → Vast pod",
+                    estimated_cost_usd=0.03, requires_pod=True,
+                    pod_spec={"type":"image","image":"vastai/comfyui-flux:latest",
+                              "gpu":"RTX_4090","gpu_ram":24,"disk_gb":50,"startup_wait_sec":60}
+                ))
+        # L1: Trivial heuristics
         if tokens < 100:
             for pat in self.TRIVIAL_RE:
                 if re.match(pat, text):
                     return self._fast("Trivial heuristic")
+        # L1.1: High-stakes domain keywords → OPUS (check BEFORE investigation/code)
         if any(kw in text for kw in self.OPUS_KW):
             return self._opus("High-stakes domain keyword")
         # L0.5: Investigation/OSINT → Agent Zero for autonomous tool execution

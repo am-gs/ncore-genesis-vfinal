@@ -134,36 +134,15 @@ class AgentState(TypedDict):
     cost_usd:  Annotated[float, _last_value]
     latency_s: Annotated[float, _last_value]
 
-# ── tenacity-wrapped LLM call (C1 + M1) ──────────────────────────────────────
-@retry(
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=1, max=10),
-    retry=retry_if_exception_type(Exception),
-    before_sleep=before_sleep_log(structlog.stdlib.get_logger(), 30),
-)
+# ── Direct httpx LLM call — fast, no LiteLLM overhead ────────────────────────
 async def _call_llm(client: httpx.AsyncClient, endpoint: str, headers: dict, payload: dict) -> str:
-    """LLM call via LiteLLM — gets caching, fallbacks, cost tracking for free."""
-    model = payload.get("model", "")
-    messages = payload.get("messages", [])
-
-    try:
-        # Use LiteLLM for OpenRouter models — gives us caching + fallbacks
-        response = await acompletion(
-            model=model,
-            messages=messages,
-            temperature=payload.get("temperature", 0.4),
-            max_tokens=payload.get("max_tokens", 8192),
-            api_key=headers.get("Authorization", "").replace("Bearer ", ""),
-            api_base=endpoint,
-            stream=False,
-            caching=True,
-        )
-        return response.choices[0].message.content
-    except Exception:
-        # Fallback to direct httpx call if LiteLLM fails
-        r = await client.post(f"{endpoint}/chat/completions", headers=headers, json=payload)
-        r.raise_for_status()
-        return r.json()["choices"][0]["message"]["content"]
+    """Direct httpx call to OpenRouter/compatible API. Single attempt, no retry.
+    LiteLLM was adding 7-50s of overhead via model name mangling + retries.
+    Retries are handled at the fallback-cascade level in node_execute."""
+    url = endpoint.rstrip("/") + "/chat/completions"
+    r = await client.post(url, headers=headers, json=payload, timeout=60.0)
+    r.raise_for_status()
+    return r.json()["choices"][0]["message"]["content"]
 
 # ── WebSocket support (FIX 2) ─────────────────────────────────────────────────
 ws_clients: list[WebSocket] = []
@@ -408,7 +387,28 @@ async def node_execute(state: AgentState) -> AgentState:   # C2: now truly async
         d["estimated_cost_usd"] = 0.0
         log.info("ncore.investigation_fallback_local", model=d["model"])
 
-    # ── OLLAMA tasks (local uncensored) (FIX 3) ──────────────────────────────
+    # ── UNCENSORED: try OpenRouter worker first (fast), Ollama fallback ──────
+    if d["tier"] in ("uncensored_local", "uncensored") and d["provider"] == "ollama":
+        worker_model = os.environ.get("WORKER_MODEL", "deepseek/deepseek-chat")
+        api_key = os.environ.get("OPENROUTER_API_KEY", "")
+        try:
+            output = await _call_llm(
+                app.state.http,
+                "https://openrouter.ai/api/v1",
+                {"Authorization": f"Bearer {api_key}", "HTTP-Referer": "https://ncore.internal", "X-Title": "NCore Genesis"},
+                {"model": worker_model, "messages": [{"role": "user", "content": state["task"]}],
+                 "temperature": 0.7, "max_tokens": 4096},
+            )
+            latency = time.time() - t0
+            cost = 0.001
+            update_cost(d["tier"], cost)
+            log.info("ncore.execute", tier=d["tier"], model=worker_model, latency_s=round(latency, 3))
+            await broadcast_ws({"type": "result", "data": {"tier": d["tier"], "model": worker_model, "latency_s": round(latency, 3), "cost_usd": cost, "output_preview": output[:200] if isinstance(output, str) else ""}})
+            return {**state, "output": output, "cost_usd": cost, "latency_s": latency}
+        except Exception as e:
+            log.warning("ncore.uncensored_cloud_failed", error=str(e), fallback="ollama")
+
+    # ── OLLAMA tasks (local fallback) ────────────────────────────────────────
     if d["provider"] == "ollama":
         try:
             ollama_payload = {
