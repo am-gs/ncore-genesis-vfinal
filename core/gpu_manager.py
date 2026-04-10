@@ -16,6 +16,15 @@ import structlog
 log = structlog.get_logger()
 
 # ── GPU Profiles ──────────────────────────────────────────────────────────────
+# Vast.ai template ID for ComfyUI + ReActor + Wan 2.2 face-swap pipeline
+# Template auto-provisions: Wan 2.2 I2V 14B FP8, ReActor, FaceDetailer,
+# CodeFormer, GPEN, VideoHelperSuite, YOLO face detection
+COMFYUI_TEMPLATE_ID = 381886  # ComfyUI-FaceSwap-v4-FIXED
+
+# IMPORTANT: The correct Vast.ai ComfyUI Docker image is vastai/comfy:latest
+# NOT vastai/comfyui (which does not exist and will fail with pull access denied)
+COMFYUI_IMAGE = "vastai/comfy:latest"
+
 GPU_PROFILES: dict[str, dict[str, Any]] = {
     "infer-light": {
         "query": "gpu_name=RTX_4090 num_gpus=1 gpu_ram>=24 inet_down>200 disk_space>=50",
@@ -30,20 +39,30 @@ GPU_PROFILES: dict[str, dict[str, Any]] = {
         "use_case": "Large MoE inference, 120B+ models",
     },
     "video-gen": {
-        "query": "gpu_name=RTX_4090 num_gpus=1 gpu_ram>=24 inet_down>200 disk_space>=100",
-        "image": "vastai/comfyui-wan22:latest",
-        "disk": 100,
-        "use_case": "Wan2.2 video generation",
+        "query": "gpu_name=RTX_4090 num_gpus=1 gpu_ram>=24 inet_down>500 disk_space>=60",
+        "image": COMFYUI_IMAGE,
+        "template_id": COMFYUI_TEMPLATE_ID,
+        "disk": 60,
+        "use_case": "Wan 2.2 I2V + ReActor face-swap video generation",
     },
     "video-gen-hd": {
-        "query": "gpu_name=A100_SXM num_gpus=1 gpu_ram>=80 inet_down>200 disk_space>=150",
-        "image": "vastai/comfyui-wan22:latest",
-        "disk": 150,
-        "use_case": "Wan2.2 14B full resolution",
+        "query": "gpu_name=A100_SXM num_gpus=1 gpu_ram>=80 inet_down>500 disk_space>=100",
+        "image": COMFYUI_IMAGE,
+        "template_id": COMFYUI_TEMPLATE_ID,
+        "disk": 100,
+        "use_case": "Wan 2.2 14B full resolution + face-swap",
+    },
+    "video-gen-fast": {
+        "query": "gpu_name=RTX_4090 num_gpus=1 gpu_ram>=24 inet_down>2000 disk_space>=60",
+        "image": COMFYUI_IMAGE,
+        "template_id": COMFYUI_TEMPLATE_ID,
+        "disk": 60,
+        "use_case": "Fast boot video gen (>2Gbps download, ~4 min boot)",
     },
     "image-gen": {
         "query": "gpu_name=RTX_4090 num_gpus=1 gpu_ram>=24 inet_down>200 disk_space>=50",
-        "image": "vastai/comfyui-flux:latest",
+        "image": COMFYUI_IMAGE,
+        "template_id": COMFYUI_TEMPLATE_ID,
         "disk": 50,
         "use_case": "Flux/SD image generation",
     },
@@ -57,10 +76,14 @@ _TASK_PROFILE_MAP: dict[str, str] = {
     "moe": "infer-heavy",
     "video": "video-gen",
     "video_hd": "video-gen-hd",
+    "video_fast": "video-gen-fast",
     "image": "image-gen",
     "flux": "image-gen",
     "wan": "video-gen",
     "comfyui": "image-gen",
+    "faceswap": "video-gen",
+    "nsfw": "video-gen",
+    "nsfw_fast": "video-gen-fast",
 }
 
 
@@ -150,13 +173,20 @@ class GPUManager:
         offer_id = offer["id"]
         dph = offer.get("dph_total", 0)
 
-        # Launch instance
+        # Launch instance (with template if specified)
+        launch_kwargs = {
+            "id": offer_id,
+            "image": profile["image"],
+            "disk": profile["disk"],
+        }
+        if "template_id" in profile:
+            launch_kwargs["template_id"] = profile["template_id"]
+            log.info("gpu_manager.provision.using_template",
+                     template_id=profile["template_id"])
         try:
             result = await asyncio.to_thread(
                 self.vast.launch_instance,
-                id=offer_id,
-                image=profile["image"],
-                disk=profile["disk"],
+                **launch_kwargs,
             )
         except Exception as e:
             log.error("gpu_manager.provision.launch_failed", offer_id=offer_id,
