@@ -19,11 +19,13 @@ log = structlog.get_logger()
 # Vast.ai template ID for ComfyUI + ReActor + Wan 2.2 face-swap pipeline
 # Template auto-provisions: Wan 2.2 I2V 14B FP8, ReActor, FaceDetailer,
 # CodeFormer, GPEN, VideoHelperSuite, YOLO face detection
-COMFYUI_TEMPLATE_ID = 381886  # ComfyUI-FaceSwap-v4-FIXED
+COMFYUI_TEMPLATE_ID = 381957  # ComfyUI-FaceSwap-v5-FINAL
 
 # IMPORTANT: The correct Vast.ai ComfyUI Docker image is vastai/comfy:latest
 # NOT vastai/comfyui (which does not exist and will fail with pull access denied)
-COMFYUI_IMAGE = "vastai/comfy:latest"
+# CRITICAL: Must use explicit version tag — vastai/comfy:latest DOES NOT EXIST
+# Check https://hub.docker.com/r/vastai/comfy/tags for available tags
+COMFYUI_IMAGE = "vastai/comfy:v0.18.2-cuda-12.9-py312"
 
 GPU_PROFILES: dict[str, dict[str, Any]] = {
     "infer-light": {
