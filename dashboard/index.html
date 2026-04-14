@@ -2231,6 +2231,118 @@ ul, ol { list-style: none; }
 .gear-btn:hover { background: var(--color-surface-2); color: var(--color-text); }
 .gear-btn svg { width: 18px; height: 18px; }
 
+
+/* ============================================================
+   v4 — PROVIDER BALANCE CARDS
+   ============================================================ */
+.provider-balances {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.provider-card {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  position: relative;
+  overflow: hidden;
+  transition: border-color var(--transition-fast);
+}
+.provider-card:hover { border-color: var(--color-border-strong); }
+.provider-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+}
+.provider-card .provider-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-tertiary);
+  margin-bottom: 4px;
+}
+.provider-card .provider-value {
+  font-size: 16px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  letter-spacing: -0.02em;
+  color: var(--color-text);
+  line-height: 1.3;
+}
+.provider-card .provider-detail {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: var(--color-text-tertiary);
+  line-height: 1.4;
+  margin-top: 2px;
+}
+.provider-card .provider-bar {
+  margin-top: 6px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--color-surface-3);
+  overflow: hidden;
+}
+.provider-card .provider-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.6s ease;
+}
+.provider-card.loading .provider-value::after {
+  content: '…';
+  animation: pulse 1.2s infinite;
+}
+
+/* Speed indicator in composer */
+.composer-speed-indicator {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--color-text-tertiary);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 4px;
+  white-space: nowrap;
+}
+.composer-speed-indicator.fast {
+  color: #f59e0b;
+}
+.composer-speed-indicator .speed-bolt {
+  font-size: 12px;
+}
+
+/* Cerebras FAST badge */
+.model-fast-badge {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: var(--radius-full);
+  background: rgba(245, 158, 11, 0.12);
+  color: #f59e0b;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Supervisor uptime counter */
+.supervisor-uptime {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: var(--color-text-tertiary);
+  margin-top: 2px;
+}
+.supervisor-latency {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: var(--color-text-tertiary);
+  margin-left: auto;
+}
+
 </style>
 </head>
 <body>
@@ -2260,10 +2372,15 @@ ul, ol { list-style: none; }
         <span id="supervisorText">All systems healthy</span>
       </div>
       <div class="supervisor-check-time" id="supervisorCheckTime">Last check: just now</div>
+      <div class="supervisor-uptime" id="supervisorUptime"></div>
       <div class="supervisor-details" id="supervisorDetails">
         <div class="supervisor-detail-row">
           <span class="label">Agent Zero</span>
           <span class="value" id="supDetailAgent" style="color:var(--color-success)">● Online</span>
+        </div>
+        <div class="supervisor-detail-row">
+          <span class="label">Latency</span>
+          <span class="value" id="supDetailLatency" style="color:var(--color-text-tertiary)">—</span>
         </div>
         <div class="supervisor-detail-row">
           <span class="label">WebSocket</span>
@@ -2271,7 +2388,7 @@ ul, ol { list-style: none; }
         </div>
         <div class="supervisor-detail-row">
           <span class="label">Models</span>
-          <span class="value" id="supDetailModels">3 available</span>
+          <span class="value" id="supDetailModels">7 available</span>
         </div>
         <div class="supervisor-detail-row">
           <span class="label">Memory</span>
@@ -2361,10 +2478,12 @@ ul, ol { list-style: none; }
         <h2 class="welcome-title">What can I help with?</h2>
         <p class="welcome-sub">NCore Agent Zero is ready to assist. Start a new task or continue a previous session.</p>
         <div class="welcome-chips">
-          <button class="welcome-chip" onclick="insertPrompt('Find the cheapest RTX 4090 on Vast.ai')">Find GPUs on Vast.ai</button>
-          <button class="welcome-chip" onclick="insertPrompt('Research the latest AI safety papers from the last week')">Research AI papers</button>
-          <button class="welcome-chip" onclick="insertPrompt('Deploy a Llama 3 instance on the best available GPU')">Deploy Llama 3</button>
-          <button class="welcome-chip" onclick="insertPrompt('Analyze my server logs for anomalies')">Analyze server logs</button>
+          <button class="welcome-chip" onclick="insertPrompt('Search with SearXNG: latest AI breakthroughs 2025')">Search with SearXNG</button>
+          <button class="welcome-chip" onclick="insertPrompt('Scrape and summarize: https://example.com')">Scrape &amp; summarize URL</button>
+          <button class="welcome-chip" onclick="insertPrompt('Run OSINT investigation on: [target]')">OSINT investigation</button>
+          <button class="welcome-chip" onclick="insertPrompt('Check system health')">Check system health</button>
+          <button class="welcome-chip" onclick="insertPrompt('What skills do you have?')">List your skills</button>
+          <button class="welcome-chip" onclick="insertPrompt('Generate video with face swap')">Video face swap</button>
         </div>
       </div>
     </div>
@@ -2422,36 +2541,61 @@ ul, ol { list-style: none; }
               <div class="model-option-radio"></div>
               <div class="model-option-info">
                 <div class="model-option-name">Gemini 2.5 Flash</div>
-                <div class="model-option-meta">1M ctx · fast · vision</div>
+                <div class="model-option-meta">1M ctx · vision · free</div>
               </div>
             </div>
             <div class="model-option" data-model="groq/llama-3.1-8b-instant" onclick="selectModel('groq/llama-3.1-8b-instant', this, event)">
               <div class="model-option-radio"></div>
               <div class="model-option-info">
                 <div class="model-option-name">Groq Llama 3.1 8B</div>
-                <div class="model-option-meta">128K · fastest · utility</div>
+                <div class="model-option-meta">128K · 500 tok/s · free</div>
               </div>
             </div>
             <div class="model-option" data-model="groq/llama-3.3-70b-versatile" onclick="selectModel('groq/llama-3.3-70b-versatile', this, event)">
               <div class="model-option-radio"></div>
               <div class="model-option-info">
                 <div class="model-option-name">Groq Llama 3.3 70B</div>
-                <div class="model-option-meta">128K · smart · general</div>
+                <div class="model-option-meta">128K · 400 tok/s · free</div>
               </div>
+            </div>
+            <div class="model-option" data-model="sambanova/llama-3.3-70b" onclick="selectModel('sambanova/llama-3.3-70b', this, event)">
+              <div class="model-option-radio"></div>
+              <div class="model-option-info">
+                <div class="model-option-name">SambaNova Llama 3.3 70B</div>
+                <div class="model-option-meta">128K · 411 tok/s · free</div>
+              </div>
+              <span class="model-option-tag" style="background:var(--color-success-light);color:var(--color-success)">New</span>
+            </div>
+            <div class="model-group-label">⚡ Cerebras (your key)</div>
+            <div class="model-option" data-model="cerebras/llama3.1-8b" onclick="selectModel('cerebras/llama3.1-8b', this, event)">
+              <div class="model-option-radio"></div>
+              <div class="model-option-info">
+                <div class="model-option-name">⚡ Cerebras llama3.1-8b</div>
+                <div class="model-option-meta">128K · 2,533 tok/s · fastest</div>
+              </div>
+              <span class="model-option-tag" style="background:rgba(245,158,11,0.12);color:#f59e0b">FAST</span>
+            </div>
+            <div class="model-option" data-model="cerebras/qwen-3-235b" onclick="selectModel('cerebras/qwen-3-235b', this, event)">
+              <div class="model-option-radio"></div>
+              <div class="model-option-info">
+                <div class="model-option-name">⚡ Cerebras qwen-3-235b</div>
+                <div class="model-option-meta">128K · 1,166 tok/s · powerful MoE</div>
+              </div>
+              <span class="model-option-tag" style="background:rgba(245,158,11,0.12);color:#f59e0b">FAST</span>
             </div>
             <div class="model-group-label">Paid</div>
             <div class="model-option" data-model="deepseek-chat" onclick="selectModel('deepseek-chat', this, event)">
               <div class="model-option-radio"></div>
               <div class="model-option-info">
                 <div class="model-option-name">DeepSeek Chat</div>
-                <div class="model-option-meta">128K · $0.27/M · strong</div>
+                <div class="model-option-meta">128K · $0.27/M</div>
               </div>
             </div>
             <div class="model-option" data-model="venice-uncensored" onclick="selectModel('venice-uncensored', this, event)">
               <div class="model-option-radio"></div>
               <div class="model-option-info">
                 <div class="model-option-name">Venice Uncensored</div>
-                <div class="model-option-meta">64K · $0/day · no-filter</div>
+                <div class="model-option-meta">64K · no-filter</div>
               </div>
             </div>
             <div class="model-group-label">Routing</div>
@@ -2465,6 +2609,7 @@ ul, ol { list-style: none; }
             </div>
           </div>
         </span>
+        <span class="composer-speed-indicator" id="composerSpeed"></span>
         <span class="composer-token-count" id="composerTokenCount"></span>
       </div>
     </div>
@@ -2543,6 +2688,25 @@ ul, ol { list-style: none; }
         </div>
       </div>
       <div class="drawer-panel" id="panelUsage">
+        <!-- Provider Balance Cards -->
+        <div class="provider-balances" id="providerBalances">
+          <div class="provider-card loading" id="cardOpenRouter" style="border-top: 3px solid #7c3aed">
+            <div class="provider-label">OpenRouter</div>
+            <div class="provider-value" id="orBalance">—</div>
+            <div class="provider-detail" id="orDetail">loading…</div>
+            <div class="provider-bar"><div class="provider-bar-fill" id="orBarFill" style="width:0%;background:#7c3aed"></div></div>
+          </div>
+          <div class="provider-card loading" id="cardVastAi" style="border-top: 3px solid #059669">
+            <div class="provider-label">Vast.ai GPU</div>
+            <div class="provider-value" id="vastBalanceCard">—</div>
+            <div class="provider-detail" id="vastDetail">loading…</div>
+          </div>
+          <div class="provider-card loading" id="cardCerebras" style="border-top: 3px solid #f59e0b">
+            <div class="provider-label">⚡ Cerebras</div>
+            <div class="provider-value" id="cerebrasStatus">—</div>
+            <div class="provider-detail" id="cerebrasDetail">loading…</div>
+          </div>
+        </div>
         <!-- Summary cards -->
         <div class="usage-summary">
           <div class="usage-card">
@@ -2632,7 +2796,7 @@ ul, ol { list-style: none; }
         </div>
         <div class="settings-field">
           <label class="settings-label">Agent Zero URL</label>
-          <input type="text" class="settings-input" id="settingsBaseUrl" placeholder="http://localhost:8090" value="">
+          <input type="text" class="settings-input" id="settingsBaseUrl" placeholder="http://ncore-v2:8090" value="">
         </div>
         <div class="settings-field">
           <label class="settings-label">API Key</label>
@@ -2663,6 +2827,9 @@ ul, ol { list-style: none; }
             <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
             <option value="groq/llama-3.1-8b-instant">Groq Llama 3.1 8B</option>
             <option value="groq/llama-3.3-70b-versatile">Groq Llama 3.3 70B</option>
+            <option value="sambanova/llama-3.3-70b">SambaNova Llama 3.3 70B</option>
+            <option value="cerebras/llama3.1-8b">⚡ Cerebras llama3.1-8b</option>
+            <option value="cerebras/qwen-3-235b">⚡ Cerebras qwen-3-235b</option>
             <option value="deepseek-chat">DeepSeek Chat</option>
             <option value="venice-uncensored">Venice Uncensored</option>
           </select>
@@ -2671,6 +2838,7 @@ ul, ol { list-style: none; }
           <label class="settings-label">Utility Model</label>
           <select class="settings-input" id="settingsUtilModel">
             <option value="groq/llama-3.1-8b-instant">Groq Llama 3.1 8B (fast)</option>
+            <option value="cerebras/llama3.1-8b">⚡ Cerebras llama3.1-8b (fastest)</option>
             <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
           </select>
         </div>
@@ -2740,6 +2908,10 @@ ul, ol { list-style: none; }
           <input type="password" class="settings-input" id="settingsKeyVast" placeholder="vast-...">
         </div>
         <div class="settings-field">
+          <label class="settings-label">Cerebras Key</label>
+          <input type="password" class="settings-input" id="settingsKeyCerebras" placeholder="csk-...">
+        </div>
+        <div class="settings-field">
           <label class="settings-label">OpenRouter Key</label>
           <input type="password" class="settings-input" id="settingsKeyOpenRouter" placeholder="sk-or-...">
         </div>
@@ -2775,7 +2947,7 @@ ul, ol { list-style: none; }
         <div class="settings-section-title">System</div>
         <div class="system-info-row">
           <span class="system-info-label">Dashboard</span>
-          <span class="system-info-value">v3.0.0</span>
+          <span class="system-info-value">v4.0.0</span>
         </div>
         <div class="system-info-row">
           <span class="system-info-label">Agent Zero</span>
@@ -2794,6 +2966,21 @@ ul, ol { list-style: none; }
 </div>
 
 <script>
+
+// ============================================================
+// _store POLYFILL — must be first (pure in-memory, no Web Storage)
+// ============================================================
+const _storeData = {};
+const _store = new Proxy(_storeData, {
+  set(target, prop, value) {
+    target[prop] = value;
+    return true;
+  },
+  get(target, prop) {
+    if (prop === Symbol.toPrimitive || prop === 'toString' || prop === 'valueOf') return undefined;
+    return target[prop] ?? null;
+  }
+});
 
 
 // ============================================================
@@ -3321,10 +3508,12 @@ function createNewTask() {
       <h2 class="welcome-title">What can I help with?</h2>
       <p class="welcome-sub">NCore Agent Zero is ready to assist. Start a new task or continue a previous session.</p>
       <div class="welcome-chips">
-        <button class="welcome-chip" onclick="insertPrompt('Find the cheapest RTX 4090 on Vast.ai')">Find GPUs on Vast.ai</button>
-        <button class="welcome-chip" onclick="insertPrompt('Research the latest AI safety papers from the last week')">Research AI papers</button>
-        <button class="welcome-chip" onclick="insertPrompt('Deploy a Llama 3 instance on the best available GPU')">Deploy Llama 3</button>
-        <button class="welcome-chip" onclick="insertPrompt('Analyze my server logs for anomalies')">Analyze server logs</button>
+        <button class="welcome-chip" onclick="insertPrompt('Search with SearXNG: latest AI breakthroughs 2025')">Search with SearXNG</button>
+        <button class="welcome-chip" onclick="insertPrompt('Scrape and summarize: https://example.com')">Scrape &amp; summarize URL</button>
+        <button class="welcome-chip" onclick="insertPrompt('Run OSINT investigation on: [target]')">OSINT investigation</button>
+        <button class="welcome-chip" onclick="insertPrompt('Check system health')">Check system health</button>
+        <button class="welcome-chip" onclick="insertPrompt('What skills do you have?')">List your skills</button>
+        <button class="welcome-chip" onclick="insertPrompt('Generate video with face swap')">Video face swap</button>
       </div>
     </div>
   `;
@@ -3568,7 +3757,7 @@ const SETTINGS_KEYS = [
   'ncoreDensity', 'ncoreFontSize', 'ncoreNoRefuse', 'ncoreAutoDecomp',
   'ncoreBrowserLive', 'ncoreMemoryInject', 'ncoreRefusalSensitivity',
   'ncoreKeyChatModel', 'ncoreKeyUtilModel',
-  'ncoreKeyGemini', 'ncoreKeyGroq', 'ncoreKeyVenice', 'ncoreKeyVast', 'ncoreKeyOpenRouter'
+  'ncoreKeyGemini', 'ncoreKeyGroq', 'ncoreKeyCerebras', 'ncoreKeyVenice', 'ncoreKeyVast', 'ncoreKeyOpenRouter'
 ];
 
 function loadSettings() {
@@ -3618,7 +3807,7 @@ function loadSettings() {
     document.getElementById('settingsUtilModel').value = utilModel;
 
     // API keys
-    const keyFields = { Gemini: 'settingsKeyGemini', Groq: 'settingsKeyGroq', Venice: 'settingsKeyVenice', Vast: 'settingsKeyVast', OpenRouter: 'settingsKeyOpenRouter' };
+    const keyFields = { Gemini: 'settingsKeyGemini', Groq: 'settingsKeyGroq', Cerebras: 'settingsKeyCerebras', Venice: 'settingsKeyVenice', Vast: 'settingsKeyVast', OpenRouter: 'settingsKeyOpenRouter' };
     for (const [name, id] of Object.entries(keyFields)) {
       const val = (_store[`ncoreKey${name}`] ?? null);
       if (val) document.getElementById(id).value = val;
@@ -3630,23 +3819,24 @@ function loadSettings() {
 
 function saveAllSettings() {
   try {
-    (_store['ncoreBaseUrl'] = String(document.getElementById('settingsBaseUrl')).value);
-    (_store['ncoreApiKey'] = String(document.getElementById('settingsApiKey')).value);
+    (_store['ncoreBaseUrl'] = document.getElementById('settingsBaseUrl').value);
+    (_store['ncoreApiKey'] = document.getElementById('settingsApiKey').value);
     (_store['ncoreSelectedModel'] = String(state.selectedModelId || 'auto'));
-    (_store['ncoreNoRefuse'] = String(document.getElementById('settingsNoRefuse')).checked);
-    (_store['ncoreAutoDecomp'] = String(document.getElementById('settingsAutoDecomp')).checked);
-    (_store['ncoreBrowserLive'] = String(document.getElementById('settingsBrowserLive')).checked);
-    (_store['ncoreMemoryInject'] = String(document.getElementById('settingsMemoryInject')).checked);
-    (_store['ncoreRefusalSensitivity'] = String(document.getElementById('settingsRefusalSlider')).value);
-    (_store['ncoreKeyChatModel'] = String(document.getElementById('settingsChatModel')).value);
-    (_store['ncoreKeyUtilModel'] = String(document.getElementById('settingsUtilModel')).value);
+    (_store['ncoreNoRefuse'] = String(document.getElementById('settingsNoRefuse').checked));
+    (_store['ncoreAutoDecomp'] = String(document.getElementById('settingsAutoDecomp').checked));
+    (_store['ncoreBrowserLive'] = String(document.getElementById('settingsBrowserLive').checked));
+    (_store['ncoreMemoryInject'] = String(document.getElementById('settingsMemoryInject').checked));
+    (_store['ncoreRefusalSensitivity'] = document.getElementById('settingsRefusalSlider').value);
+    (_store['ncoreKeyChatModel'] = document.getElementById('settingsChatModel').value);
+    (_store['ncoreKeyUtilModel'] = document.getElementById('settingsUtilModel').value);
 
     // API keys
-    (_store['ncoreKeyGemini'] = String(document.getElementById('settingsKeyGemini')).value);
-    (_store['ncoreKeyGroq'] = String(document.getElementById('settingsKeyGroq')).value);
-    (_store['ncoreKeyVenice'] = String(document.getElementById('settingsKeyVenice')).value);
-    (_store['ncoreKeyVast'] = String(document.getElementById('settingsKeyVast')).value);
-    (_store['ncoreKeyOpenRouter'] = String(document.getElementById('settingsKeyOpenRouter')).value);
+    (_store['ncoreKeyGemini'] = document.getElementById('settingsKeyGemini').value);
+    (_store['ncoreKeyGroq'] = document.getElementById('settingsKeyGroq').value);
+    (_store['ncoreKeyCerebras'] = document.getElementById('settingsKeyCerebras').value);
+    (_store['ncoreKeyVenice'] = document.getElementById('settingsKeyVenice').value);
+    (_store['ncoreKeyVast'] = document.getElementById('settingsKeyVast').value);
+    (_store['ncoreKeyOpenRouter'] = document.getElementById('settingsKeyOpenRouter').value);
 
     // Update global refs
     window._apiBase = document.getElementById('settingsBaseUrl').value || API_BASE;
@@ -4254,6 +4444,265 @@ async function runHealthCheck() {
   }, 3000);
 }
 
+
+// ============================================================
+// v4 — MODEL SPEED INDICATOR
+// ============================================================
+const MODEL_SPEEDS = {
+  'cerebras/llama3.1-8b': 2533,
+  'cerebras/qwen-3-235b': 1166,
+  'sambanova/llama-3.3-70b': 411,
+  'groq/llama-3.1-8b-instant': 500,
+  'groq/llama-3.3-70b-versatile': 400,
+  'gemini-2.5-flash': 80,
+  'deepseek-chat': 40,
+  'venice-uncensored': 60,
+  'auto': null
+};
+
+function updateSpeedIndicator() {
+  const el = document.getElementById('composerSpeed');
+  if (!el) return;
+  const modelId = state.selectedModelId || 'auto';
+  const speed = MODEL_SPEEDS[modelId];
+  
+  if (modelId === 'auto') {
+    el.innerHTML = '';
+    return;
+  }
+  
+  if (speed === null || speed === undefined) {
+    el.innerHTML = '';
+    return;
+  }
+  
+  const isFast = speed >= 400;
+  el.className = 'composer-speed-indicator' + (isFast ? ' fast' : '');
+  el.innerHTML = isFast 
+    ? `<span class="speed-bolt">⚡</span> ${speed.toLocaleString()} tok/s`
+    : `~${speed} tok/s`;
+}
+
+// Patch selectModel to also update speed
+const _origSelectModel = selectModel;
+selectModel = function(modelId, el, e) {
+  _origSelectModel(modelId, el, e);
+  updateSpeedIndicator();
+};
+
+const _origSetModelSelection = setModelSelection;
+setModelSelection = function(modelId, sendCommand) {
+  _origSetModelSelection(modelId, sendCommand);
+  updateSpeedIndicator();
+};
+
+// ============================================================
+// v4 — REAL PROVIDER BALANCE FETCHING
+// ============================================================
+const PROVIDER_KEYS = {
+  openrouter: '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',
+  vastai: '9575da8fad42c421d7673ed414f3fee7b669dfe3a57d5f3155300171fbf88455',
+  cerebras: 'csk-hmwvchxfvemkkjf29f95py5xnnm4y8hd55ndepvnn2ydednt'
+};
+
+async function fetchProviderBalances() {
+  // 1. OpenRouter credits
+  try {
+    const r = await fetch('https://openrouter.ai/api/v1/auth/key', {
+      headers: { 'Authorization': 'Bearer ' + PROVIDER_KEYS.openrouter },
+      signal: AbortSignal.timeout(8000)
+    });
+    if (r.ok) {
+      const d = await r.json();
+      const remaining = d.data?.limit_remaining ?? d.data?.balance ?? 0;
+      const limit = d.data?.limit ?? 0;
+      const used = d.data?.usage ?? 0;
+      const pct = limit > 0 ? Math.min((used / limit) * 100, 100) : 0;
+      
+      const card = document.getElementById('cardOpenRouter');
+      card.classList.remove('loading');
+      document.getElementById('orBalance').textContent = '$' + Number(remaining).toFixed(2);
+      document.getElementById('orDetail').textContent = limit > 0 ? `$${Number(used).toFixed(2)} of $${Number(limit).toFixed(2)} used` : 'No limit set';
+      document.getElementById('orBarFill').style.width = pct + '%';
+    } else {
+      document.getElementById('orBalance').textContent = 'Error';
+      document.getElementById('orDetail').textContent = 'HTTP ' + r.status;
+      document.getElementById('cardOpenRouter').classList.remove('loading');
+    }
+  } catch(e) {
+    document.getElementById('orBalance').textContent = '—';
+    document.getElementById('orDetail').textContent = 'Network error';
+    document.getElementById('cardOpenRouter').classList.remove('loading');
+  }
+
+  // 2. Vast.ai balance
+  try {
+    const r = await fetch('https://console.vast.ai/api/v0/users/current/', {
+      headers: { 'Authorization': 'Bearer ' + PROVIDER_KEYS.vastai },
+      signal: AbortSignal.timeout(8000)
+    });
+    if (r.ok) {
+      const d = await r.json();
+      const credit = d.credit ?? 0;
+      
+      document.getElementById('vastBalanceCard').textContent = '$' + Number(credit).toFixed(2);
+      document.getElementById('vastDetail').textContent = (d.instances_count || 0) + ' active pods';
+      document.getElementById('cardVastAi').classList.remove('loading');
+      
+      // Also update sidebar
+      const bal = document.getElementById('vastBalance');
+      bal.textContent = '$' + Number(credit).toFixed(2);
+      bal.className = 'status-value ' + (credit > 5 ? 'ok' : 'warn');
+    } else {
+      document.getElementById('vastBalanceCard').textContent = 'Error';
+      document.getElementById('vastDetail').textContent = 'HTTP ' + r.status;
+      document.getElementById('cardVastAi').classList.remove('loading');
+    }
+  } catch(e) {
+    document.getElementById('vastBalanceCard').textContent = '—';
+    document.getElementById('vastDetail').textContent = 'Network error';
+    document.getElementById('cardVastAi').classList.remove('loading');
+  }
+
+  // 3. Cerebras - verify key works
+  try {
+    const r = await fetch('https://api.cerebras.ai/v1/models', {
+      headers: { 'Authorization': 'Bearer ' + PROVIDER_KEYS.cerebras },
+      signal: AbortSignal.timeout(8000)
+    });
+    
+    if (r.ok) {
+      document.getElementById('cerebrasStatus').innerHTML = '⚡ Active';
+      document.getElementById('cerebrasDetail').textContent = '2,533 tok/s · 2 models';
+      document.getElementById('cardCerebras').classList.remove('loading');
+    } else {
+      document.getElementById('cerebrasStatus').textContent = 'Error';
+      document.getElementById('cerebrasDetail').textContent = 'HTTP ' + r.status;
+      document.getElementById('cardCerebras').classList.remove('loading');
+    }
+  } catch(e) {
+    document.getElementById('cerebrasStatus').textContent = '—';
+    document.getElementById('cerebrasDetail').textContent = 'Network error';
+    document.getElementById('cardCerebras').classList.remove('loading');
+  }
+}
+
+// ============================================================
+// v4 — ENHANCED SUPERVISOR HEALTH (real Agent Zero health check)
+// ============================================================
+let _supervisorPageLoadTime = Date.now();
+let _supervisorLastSuccessTime = null;
+let _supervisorLatency = null;
+
+// Override the existing fetchSupervisorStatus to check real Agent Zero
+const _origFetchSupervisorStatus = fetchSupervisorStatus;
+fetchSupervisorStatus = async function() {
+  const baseUrl = window._apiBase || API_BASE;
+  const apiKey = window._apiKey || API_KEY;
+  
+  try {
+    const start = Date.now();
+    const res = await fetch(`${baseUrl}/`, { 
+      signal: AbortSignal.timeout(5000),
+      headers: { 'X-API-KEY': apiKey }
+    });
+    _supervisorLatency = Date.now() - start;
+    
+    if (res.ok || res.status < 500) {
+      _supervisorLastSuccessTime = new Date();
+      updateSupervisorUI({
+        status: 'healthy',
+        message: 'All systems healthy',
+        agent: 'online'
+      });
+      // Update latency detail
+      const latEl = document.getElementById('supDetailLatency');
+      if (latEl) latEl.textContent = _supervisorLatency + 'ms';
+    } else {
+      updateSupervisorUI({
+        status: 'warning',
+        message: 'Agent returned HTTP ' + res.status,
+        agent: 'degraded'
+      });
+    }
+  } catch(e) {
+    // Check if we had a previous success — show degraded instead of critical
+    if (_supervisorLastSuccessTime) {
+      const elapsed = Date.now() - _supervisorLastSuccessTime.getTime();
+      if (elapsed < 120000) {
+        updateSupervisorUI({
+          status: 'warning',
+          message: 'Connection lost ' + Math.floor(elapsed/1000) + 's ago'
+        });
+      } else {
+        updateSupervisorUI({ status: 'critical', message: 'Agent Zero unreachable' });
+      }
+    } else {
+      updateSupervisorUI({ status: 'warning', message: 'Waiting for first connection…' });
+    }
+  }
+  
+  supervisorLastCheck = Date.now();
+  updateSupervisorCheckTime();
+  
+  // Update uptime counter
+  const uptimeEl = document.getElementById('supervisorUptime');
+  if (uptimeEl) {
+    const uptime = Math.floor((Date.now() - _supervisorPageLoadTime) / 1000);
+    const h = Math.floor(uptime / 3600);
+    const m = Math.floor((uptime % 3600) / 60);
+    const s = uptime % 60;
+    const parts = [];
+    if (h > 0) parts.push(h + 'h');
+    if (m > 0) parts.push(m + 'm');
+    parts.push(s + 's');
+    uptimeEl.textContent = 'Uptime: ' + parts.join(' ');
+    if (_supervisorLastSuccessTime) {
+      uptimeEl.textContent += ' · Last OK: ' + _supervisorLastSuccessTime.toLocaleTimeString();
+    }
+  }
+  
+  // Update WS detail
+  const wsEl = document.getElementById('supDetailWS');
+  if (wsEl) {
+    if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+      wsEl.innerHTML = '<span style="color:var(--color-success)">● Connected</span>';
+    } else if (state.ws && state.ws.readyState === WebSocket.CONNECTING) {
+      wsEl.innerHTML = '<span style="color:var(--color-warning)">● Connecting</span>';
+    } else {
+      wsEl.innerHTML = '<span style="color:var(--color-error)">● Disconnected</span>';
+    }
+  }
+};
+
+// ============================================================
+// v4 — PRESETS UPDATE (add cerebras speed preset)
+// ============================================================
+const _origApplyPreset = applyPreset;
+applyPreset = function(preset) {
+  const presets = {
+    speed: 'cerebras/llama3.1-8b',
+    smart: 'gemini-2.5-flash',
+    uncensored: 'venice-uncensored'
+  };
+
+  const modelId = presets[preset];
+  if (!modelId) return;
+
+  const option = document.querySelector(`.model-option[data-model="${modelId}"]`);
+  if (option) {
+    selectModel(modelId, option, null);
+  }
+
+  document.getElementById('settingsChatModel').value = modelId;
+
+  document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+  if (event && event.target) {
+    const presetBtn = event.target.closest('.preset-btn');
+    if (presetBtn) presetBtn.classList.add('active');
+  }
+};
+
 // ============================================================
 // INITIALIZATION
 // ============================================================
@@ -4275,12 +4724,20 @@ function init() {
   // v3: Start browser live view polling
   startBrowserLiveView();
 
-  // v3: Supervisor status check
+  // v3: Supervisor status check (now uses real Agent Zero health)
   fetchSupervisorStatus();
-  setInterval(fetchSupervisorStatus, 30000);
+  setInterval(fetchSupervisorStatus, 60000);
 
   // v3: Initialize memory panel
   renderMemoryPanel();
+
+  // v4: Fetch provider balances on load
+  fetchProviderBalances();
+  // Refresh provider balances every 5 minutes
+  setInterval(fetchProviderBalances, 300000);
+
+  // v4: Initialize speed indicator
+  updateSpeedIndicator();
 }
 
 async function fetchStatus() {
@@ -4330,6 +4787,9 @@ const PRICING = {
   'groq/llama-3.1-8b-instant':  { input: 0, output: 0, color: '#ff6b35', label: 'Groq Llama 8B' },
   'llama-3.3-70b-versatile':    { input: 0, output: 0, color: '#ff6b35', label: 'Groq Llama 70B' },
   'groq/llama-3.3-70b-versatile': { input: 0, output: 0, color: '#ff6b35', label: 'Groq Llama 70B' },
+  'sambanova/llama-3.3-70b':    { input: 0, output: 0, color: '#059669', label: 'SambaNova 70B' },
+  'cerebras/llama3.1-8b':       { input: 0, output: 0, color: '#f59e0b', label: '⚡ Cerebras 8B' },
+  'cerebras/qwen-3-235b':       { input: 0, output: 0, color: '#f59e0b', label: '⚡ Cerebras 235B' },
   'deepseek-chat':              { input: 0.00027, output: 0.0011, color: '#06b6d4', label: 'DeepSeek Chat' },
   'deepseek/deepseek-chat':     { input: 0.00027, output: 0.0011, color: '#06b6d4', label: 'DeepSeek Chat' },
   'venice-uncensored':          { input: 0, output: 0, color: '#8b5cf6', label: 'Venice Uncensored' },
@@ -4337,9 +4797,11 @@ const PRICING = {
 
 // Rate limit tracking
 const RATE_LIMITS = {
-  'Gemini':  { type: 'RPD', limit: 250,   used: 0, color: '#4285f4' },
-  'Groq':    { type: 'RPD', limit: 14400, used: 0, color: '#ff6b35' },
-  'DeepSeek':{ type: 'RPD', limit: 500,   used: 0, color: '#06b6d4' },
+  'Gemini':    { type: 'RPD', limit: 250,   used: 0, color: '#4285f4' },
+  'Groq':      { type: 'RPD', limit: 14400, used: 0, color: '#ff6b35' },
+  'SambaNova': { type: 'RPD', limit: 48000, used: 0, color: '#059669' },
+  'Cerebras':  { type: 'RPD', limit: 999999, used: 0, color: '#f59e0b', unlimited: true },
+  'DeepSeek':  { type: 'RPD', limit: 500,   used: 0, color: '#06b6d4' },
 };
 
 function getModelPricing(model) {
@@ -4351,7 +4813,9 @@ function getRateLimitKey(model) {
   if (!model) return null;
   const m = model.toLowerCase();
   if (m.includes('gemini')) return 'Gemini';
-  if (m.includes('groq') || m.includes('llama')) return 'Groq';
+  if (m.includes('cerebras')) return 'Cerebras';
+  if (m.includes('sambanova')) return 'SambaNova';
+  if (m.includes('groq') || (m.includes('llama') && !m.includes('sambanova') && !m.includes('cerebras'))) return 'Groq';
   if (m.includes('deepseek')) return 'DeepSeek';
   return null;
 }
@@ -4551,21 +5015,33 @@ function renderRateLimits() {
   container.innerHTML = '';
 
   for (const [name, rl] of Object.entries(RATE_LIMITS)) {
-    const pct = Math.min((rl.used / rl.limit) * 100, 100);
-    let barColor = rl.color;
-    if (pct > 80) barColor = '#dc2626';
-    else if (pct > 50) barColor = '#d97706';
-
     const row = document.createElement('div');
     row.className = 'ratelimit-row';
-    row.innerHTML = `
-      <span class="ratelimit-label">${name}</span>
-      <div class="ratelimit-bar-bg">
-        <div class="ratelimit-bar-fill" style="width:${pct}%;background:${barColor}"></div>
-      </div>
-      <span class="ratelimit-pct">${Math.round(pct)}%</span>
-    `;
-    row.title = `${rl.used} / ${rl.limit.toLocaleString()} ${rl.type} used`;
+
+    if (rl.unlimited) {
+      row.innerHTML = `
+        <span class="ratelimit-label">${name}</span>
+        <div class="ratelimit-bar-bg">
+          <div class="ratelimit-bar-fill" style="width:5%;background:${rl.color}"></div>
+        </div>
+        <span class="ratelimit-pct" style="color:${rl.color};font-size:9px">∞</span>
+      `;
+      row.title = `${rl.used} used · Unlimited (paid key)`;
+    } else {
+      const pct = Math.min((rl.used / rl.limit) * 100, 100);
+      let barColor = rl.color;
+      if (pct > 80) barColor = '#dc2626';
+      else if (pct > 50) barColor = '#d97706';
+
+      row.innerHTML = `
+        <span class="ratelimit-label">${name}</span>
+        <div class="ratelimit-bar-bg">
+          <div class="ratelimit-bar-fill" style="width:${pct}%;background:${barColor}"></div>
+        </div>
+        <span class="ratelimit-pct">${Math.round(pct)}%</span>
+      `;
+      row.title = `${rl.used} / ${rl.limit.toLocaleString()} ${rl.type} used`;
+    }
     container.appendChild(row);
   }
 }
