@@ -1162,6 +1162,325 @@ ul, ol { list-style: none; }
 .theme-toggle svg { width: 18px; height: 18px; }
 
 /* ============================================================
+   USAGE TAB — OpenRouter-style usage monitoring
+   ============================================================ */
+.usage-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  text-align: center;
+  gap: 8px;
+}
+.usage-empty-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: var(--color-surface-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-tertiary);
+  font-size: 18px;
+}
+.usage-empty-text {
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+
+/* Summary cards row */
+.usage-summary {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.usage-card {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.usage-card-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-tertiary);
+}
+.usage-card-value {
+  font-size: 18px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  letter-spacing: -0.02em;
+  color: var(--color-text);
+  line-height: 1.2;
+}
+.usage-card-detail {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: var(--color-text-tertiary);
+  line-height: 1.4;
+}
+.usage-card-detail .in { color: var(--color-accent); }
+.usage-card-detail .out { color: var(--color-success); }
+.usage-card-detail .err { color: var(--color-error); }
+
+/* Mini sparkline chart */
+.usage-sparkline-wrap {
+  margin-bottom: 16px;
+}
+.usage-sparkline-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.usage-sparkline-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+.usage-sparkline-range {
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+}
+.usage-sparkline-canvas {
+  width: 100%;
+  height: 48px;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  display: block;
+}
+
+/* Rate limit bars */
+.usage-ratelimits {
+  margin-bottom: 16px;
+}
+.usage-ratelimits-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  margin-bottom: 8px;
+}
+.ratelimit-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.ratelimit-row:last-child { margin-bottom: 0; }
+.ratelimit-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  min-width: 72px;
+  white-space: nowrap;
+}
+.ratelimit-bar-bg {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--color-surface-3);
+  overflow: hidden;
+  position: relative;
+}
+.ratelimit-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.4s ease, background 0.4s ease;
+}
+.ratelimit-pct {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--color-text-tertiary);
+  min-width: 32px;
+  text-align: right;
+}
+
+/* Activity table */
+.usage-table-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.usage-table-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+.usage-export-btn {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.usage-export-btn:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  background: var(--color-accent-subtle);
+}
+
+.usage-table {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+.usage-table-head {
+  display: grid;
+  grid-template-columns: 52px 1fr 52px 52px 52px 42px 24px;
+  gap: 2px;
+  padding: 6px 10px;
+  background: var(--color-surface-2);
+  border-bottom: 1px solid var(--color-border);
+}
+.usage-table-head span {
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+}
+.usage-table-body {
+  max-height: 300px;
+  overflow-y: auto;
+}
+.usage-row {
+  display: grid;
+  grid-template-columns: 52px 1fr 52px 52px 52px 42px 24px;
+  gap: 2px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--color-border);
+  border-left: 3px solid transparent;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+  align-items: center;
+}
+.usage-row:last-child { border-bottom: none; }
+.usage-row:hover { background: var(--color-surface-2); }
+.usage-row span {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.usage-row .usage-model {
+  font-family: var(--font-body);
+  font-weight: 500;
+  font-size: 11px;
+  color: var(--color-text);
+}
+.usage-row .usage-cost {
+  font-weight: 600;
+  color: var(--color-text);
+}
+.usage-row .usage-cost.free {
+  color: var(--color-success);
+}
+.usage-row .usage-status {
+  text-align: center;
+}
+.usage-row .usage-status.ok { color: var(--color-success); }
+.usage-row .usage-status.err { color: var(--color-error); }
+
+.usage-row-expand {
+  display: none;
+  grid-column: 1 / -1;
+  padding: 8px;
+  background: var(--color-bg);
+  border-radius: var(--radius-sm);
+  margin-top: 4px;
+}
+.usage-row-expand.open { display: block; }
+.usage-row-expand pre {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 100px;
+  overflow-y: auto;
+}
+
+.usage-load-more {
+  text-align: center;
+  padding: 6px;
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  transition: color var(--transition-fast);
+}
+.usage-load-more:hover { color: var(--color-accent); }
+
+/* Session summary footer */
+.usage-session-footer {
+  margin-top: 16px;
+  padding: 10px 12px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.usage-session-footer-stats {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.usage-session-footer-stats span {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--color-text-secondary);
+}
+.usage-session-footer-stats span strong {
+  color: var(--color-text);
+}
+.usage-export-report-btn {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+  color: white;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+.usage-export-report-btn:hover {
+  background: var(--color-accent-hover);
+  transform: translateY(-1px);
+}
+
+/* Token counter under composer */
+.composer-token-count {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--color-text-tertiary);
+  margin-left: auto;
+  padding-left: 8px;
+  white-space: nowrap;
+}
+
+/* ============================================================
    RESPONSIVE
    ============================================================ */
 @media (max-width: 1200px) {
@@ -1232,6 +1551,10 @@ ul, ol { list-style: none; }
         <span class="status-label">Health</span>
         <span class="status-value ok" id="healthStatus">—</span>
       </div>
+      <div class="status-row" id="usageFooterRow" style="display:none">
+        <span class="status-label">Usage</span>
+        <span class="status-value" id="usageFooterValue" style="color:var(--color-accent)">0 tok · $0.00</span>
+      </div>
     </div>
   </aside>
 
@@ -1286,7 +1609,7 @@ ul, ol { list-style: none; }
           placeholder="Describe your task..."
           rows="1"
           onkeydown="handleComposerKey(event)"
-          oninput="autoResize(this); updateSendBtn()"
+          oninput="autoResize(this); updateSendBtn(); updateComposerTokenCount()"
         ></textarea>
         <button class="composer-send" id="sendBtn" onclick="sendMessage()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
@@ -1316,6 +1639,7 @@ ul, ol { list-style: none; }
           </div>
         </button>
         <span class="model-badge" id="modelBadge">claude-sonnet-4</span>
+        <span class="composer-token-count" id="composerTokenCount"></span>
       </div>
     </div>
   </main>
@@ -1338,6 +1662,10 @@ ul, ol { list-style: none; }
         <span class="drawer-tab-icon">🧠</span>
         <span>Memory</span>
       </button>
+      <button class="drawer-tab" onclick="switchDrawerTab('usage', this)">
+        <span class="drawer-tab-icon"><svg style="width:14px;height:14px;vertical-align:middle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20v-4"/></svg></span>
+        <span>Usage</span>
+      </button>
     </div>
     <div class="drawer-content">
       <div class="drawer-panel active" id="panelLive">
@@ -1356,6 +1684,70 @@ ul, ol { list-style: none; }
         <div class="memory-empty">
           <div class="memory-empty-icon">🧠</div>
           <div class="memory-empty-text">Memory entries will appear here</div>
+        </div>
+      </div>
+      <div class="drawer-panel" id="panelUsage">
+        <!-- Summary cards -->
+        <div class="usage-summary">
+          <div class="usage-card">
+            <div class="usage-card-label">Session Cost</div>
+            <div class="usage-card-value" id="usageCostValue">$0.00</div>
+            <div class="usage-card-detail"><span class="in">↑ in $0.00</span> <span class="out">↓ out $0.00</span></div>
+          </div>
+          <div class="usage-card">
+            <div class="usage-card-label">Tokens Used</div>
+            <div class="usage-card-value" id="usageTokensValue">0</div>
+            <div class="usage-card-detail" id="usageTokensDetail">0 in / 0 out</div>
+          </div>
+          <div class="usage-card">
+            <div class="usage-card-label">Requests</div>
+            <div class="usage-card-value" id="usageReqValue">0</div>
+            <div class="usage-card-detail" id="usageReqDetail">avg — · 0 errors</div>
+          </div>
+        </div>
+        <!-- Sparkline -->
+        <div class="usage-sparkline-wrap">
+          <div class="usage-sparkline-header">
+            <span class="usage-sparkline-title">Token usage</span>
+            <span class="usage-sparkline-range" id="usageSparkRange">last 20 requests</span>
+          </div>
+          <canvas class="usage-sparkline-canvas" id="usageSparkline" width="328" height="48"></canvas>
+        </div>
+        <!-- Rate limits -->
+        <div class="usage-ratelimits">
+          <div class="usage-ratelimits-title">Rate Limits</div>
+          <div id="rateLimitBars"></div>
+        </div>
+        <!-- Activity table -->
+        <div class="usage-table-header">
+          <span class="usage-table-title">Activity</span>
+          <button class="usage-export-btn" onclick="exportUsageCSV()">Export CSV</button>
+        </div>
+        <div class="usage-table">
+          <div class="usage-table-head">
+            <span>Time</span>
+            <span>Model</span>
+            <span>In</span>
+            <span>Out</span>
+            <span>Cost</span>
+            <span>Latency</span>
+            <span></span>
+          </div>
+          <div class="usage-table-body" id="usageTableBody">
+            <div class="usage-empty">
+              <div class="usage-empty-icon"><svg style="width:18px;height:18px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20v-4"/></svg></div>
+              <div class="usage-empty-text">No API calls yet</div>
+            </div>
+          </div>
+        </div>
+        <!-- Session footer -->
+        <div class="usage-session-footer" id="usageSessionFooter">
+          <div class="usage-session-footer-stats">
+            <span>Session: <strong id="usageSessionTime">0s</strong></span>
+            <span>Total: <strong id="usageSessionCost">$0.00</strong></span>
+            <span><strong id="usageSessionTokens">0</strong> tokens</span>
+          </div>
+          <button class="usage-export-report-btn" onclick="exportUsageCSV()">Export Report ↓</button>
         </div>
       </div>
     </div>
@@ -1475,6 +1867,16 @@ function handleWSMessage(data) {
 
   const type = data.type || '';
   const subtype = data.subtype || '';
+
+  // Track model from status updates
+  if (data.model) currentModel = data.model;
+
+  // Record usage for trackable message types
+  const trackTypes = ['agent', 'response', 'tool', 'tool_call', 'code', 'code_execution', 'complete', 'done', 'task_complete', 'error'];
+  if (trackTypes.includes(type)) {
+    recordUsage(data, _lastReqStartTime || 0);
+    _lastReqStartTime = Date.now(); // reset for next
+  }
 
   if (type === 'agent' || type === 'response') {
     setAgentWorking(true);
@@ -1906,6 +2308,7 @@ async function sendMessage() {
   addUserMessage(text);
   setAgentWorking(true);
   state.taskStartTime = Date.now();
+  _lastReqStartTime = Date.now();
   startElapsedTimer();
 
   // Set title from first message
@@ -2148,6 +2551,398 @@ async function fetchStatus() {
     document.getElementById('healthStatus').className = 'status-value ok';
   }
 }
+
+// ============================================================
+// USAGE MONITORING — OpenRouter-style
+// ============================================================
+const usageLog = []; // Array of request records
+const sessionStats = {
+  inputTokens: 0,
+  outputTokens: 0,
+  inputCost: 0,
+  outputCost: 0,
+  totalCost: 0,
+  requests: 0,
+  errors: 0,
+  totalLatency: 0,
+  requestHistory: [], // For sparkline: [{tokens, latency, timestamp}]
+  sessionStart: Date.now(),
+};
+
+let currentModel = 'gemini-2.5-flash';
+let usageDisplayMax = 50;
+let _lastReqStartTime = 0;
+
+// Model pricing (per 1K tokens, USD)
+const PRICING = {
+  'gemini-2.5-flash':           { input: 0.000075, output: 0.0003, color: '#4285f4', label: 'Gemini 2.5 Flash' },
+  'gemini/gemini-2.5-flash':    { input: 0.000075, output: 0.0003, color: '#4285f4', label: 'Gemini 2.5 Flash' },
+  'llama-3.1-8b-instant':       { input: 0, output: 0, color: '#ff6b35', label: 'Groq Llama 8B' },
+  'groq/llama-3.1-8b-instant':  { input: 0, output: 0, color: '#ff6b35', label: 'Groq Llama 8B' },
+  'llama-3.3-70b-versatile':    { input: 0, output: 0, color: '#ff6b35', label: 'Groq Llama 70B' },
+  'groq/llama-3.3-70b-versatile': { input: 0, output: 0, color: '#ff6b35', label: 'Groq Llama 70B' },
+  'deepseek-chat':              { input: 0.00027, output: 0.0011, color: '#06b6d4', label: 'DeepSeek Chat' },
+  'deepseek/deepseek-chat':     { input: 0.00027, output: 0.0011, color: '#06b6d4', label: 'DeepSeek Chat' },
+  'venice-uncensored':          { input: 0, output: 0, color: '#8b5cf6', label: 'Venice Uncensored' },
+};
+
+// Rate limit tracking
+const RATE_LIMITS = {
+  'Gemini':  { type: 'RPD', limit: 250,   used: 0, color: '#4285f4' },
+  'Groq':    { type: 'RPD', limit: 14400, used: 0, color: '#ff6b35' },
+  'DeepSeek':{ type: 'RPD', limit: 500,   used: 0, color: '#06b6d4' },
+};
+
+function getModelPricing(model) {
+  if (!model) return { input: 0, output: 0, color: '#6b7280', label: 'Unknown' };
+  return PRICING[model] || { input: 0, output: 0, color: '#6b7280', label: model };
+}
+
+function getRateLimitKey(model) {
+  if (!model) return null;
+  const m = model.toLowerCase();
+  if (m.includes('gemini')) return 'Gemini';
+  if (m.includes('groq') || m.includes('llama')) return 'Groq';
+  if (m.includes('deepseek')) return 'DeepSeek';
+  return null;
+}
+
+function recordUsage(msg, startTime) {
+  const now = Date.now();
+  const latency = startTime ? now - startTime : 0;
+
+  let inputTok = 0, outputTok = 0;
+  if (msg.tokens) {
+    inputTok = msg.tokens.prompt || msg.tokens.input || 0;
+    outputTok = msg.tokens.completion || msg.tokens.output || 0;
+  } else if (msg.usage) {
+    inputTok = msg.usage.prompt_tokens || msg.usage.input_tokens || 0;
+    outputTok = msg.usage.completion_tokens || msg.usage.output_tokens || 0;
+  } else if (msg.content || msg.text || msg.message) {
+    const text = msg.content || msg.text || msg.message || '';
+    outputTok = Math.ceil(text.length / 4); // fallback estimate
+  }
+
+  const model = msg.model || currentModel || 'gemini-2.5-flash';
+  const pricing = getModelPricing(model);
+  const inCost = (inputTok * pricing.input) / 1000;
+  const outCost = (outputTok * pricing.output) / 1000;
+  const cost = inCost + outCost;
+
+  const record = {
+    id: now,
+    timestamp: now,
+    model,
+    modelLabel: pricing.label,
+    modelColor: pricing.color,
+    inputTokens: inputTok,
+    outputTokens: outputTok,
+    cost,
+    inCost,
+    outCost,
+    latency,
+    status: msg.error ? 'error' : 'success',
+    type: msg.type || 'agent',
+    contentSnippet: (msg.content || msg.text || msg.message || '').substring(0, 200),
+  };
+
+  usageLog.unshift(record); // newest first
+  if (usageLog.length > 200) usageLog.pop();
+
+  sessionStats.inputTokens += inputTok;
+  sessionStats.outputTokens += outputTok;
+  sessionStats.inputCost += inCost;
+  sessionStats.outputCost += outCost;
+  sessionStats.totalCost += cost;
+  sessionStats.requests++;
+  sessionStats.totalLatency += latency;
+  if (msg.error) sessionStats.errors++;
+  sessionStats.requestHistory.push({ tokens: inputTok + outputTok, latency, timestamp: now });
+  if (sessionStats.requestHistory.length > 20) sessionStats.requestHistory.shift();
+
+  // Update rate limits
+  const rlKey = getRateLimitKey(model);
+  if (rlKey && RATE_LIMITS[rlKey]) {
+    RATE_LIMITS[rlKey].used++;
+  }
+
+  updateUsageTab();
+  updateUsageSidebarFooter();
+}
+
+function formatTokenCount(n) {
+  if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+  if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+  return String(n);
+}
+
+function formatCost(n) {
+  if (n === 0) return '$0.00';
+  if (n < 0.01) return '$' + n.toFixed(4);
+  return '$' + n.toFixed(2);
+}
+
+function relativeTime(ts) {
+  const diff = Date.now() - ts;
+  if (diff < 5000) return 'now';
+  if (diff < 60000) return Math.floor(diff / 1000) + 's ago';
+  if (diff < 3600000) return Math.floor(diff / 60000) + 'm ago';
+  return Math.floor(diff / 3600000) + 'h ago';
+}
+
+function updateUsageTab() {
+  const totalTok = sessionStats.inputTokens + sessionStats.outputTokens;
+
+  // Summary cards
+  const costEl = document.getElementById('usageCostValue');
+  if (costEl) costEl.textContent = formatCost(sessionStats.totalCost);
+
+  const costCard = costEl?.parentElement;
+  if (costCard) {
+    const detail = costCard.querySelector('.usage-card-detail');
+    if (detail) detail.innerHTML = `<span class="in">&uarr; in ${formatCost(sessionStats.inputCost)}</span> <span class="out">&darr; out ${formatCost(sessionStats.outputCost)}</span>`;
+  }
+
+  const tokensEl = document.getElementById('usageTokensValue');
+  if (tokensEl) tokensEl.textContent = formatTokenCount(totalTok);
+
+  const tokensDetail = document.getElementById('usageTokensDetail');
+  if (tokensDetail) tokensDetail.textContent = `${formatTokenCount(sessionStats.inputTokens)} in / ${formatTokenCount(sessionStats.outputTokens)} out`;
+
+  const reqEl = document.getElementById('usageReqValue');
+  if (reqEl) reqEl.textContent = sessionStats.requests;
+
+  const reqDetail = document.getElementById('usageReqDetail');
+  if (reqDetail) {
+    const avgLatency = sessionStats.requests > 0 ? Math.round(sessionStats.totalLatency / sessionStats.requests) : 0;
+    const avgStr = avgLatency > 1000 ? (avgLatency / 1000).toFixed(1) + 's' : avgLatency + 'ms';
+    reqDetail.innerHTML = `avg ${avgStr} &middot; <span class="${sessionStats.errors > 0 ? 'err' : ''}">${sessionStats.errors} errors</span>`;
+  }
+
+  // Sparkline
+  drawUsageSparkline();
+
+  // Rate limits
+  renderRateLimits();
+
+  // Activity table
+  renderUsageTable();
+
+  // Session footer
+  updateUsageSessionFooter();
+}
+
+function drawUsageSparkline() {
+  const canvas = document.getElementById('usageSparkline');
+  if (!canvas) return;
+  const data = sessionStats.requestHistory;
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
+  const w = rect.width;
+  const h = rect.height;
+  ctx.clearRect(0, 0, w, h);
+
+  if (data.length < 2) {
+    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--color-text-tertiary') || '#9a9a9a';
+    ctx.font = '10px Inter, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Waiting for data…', w / 2, h / 2 + 3);
+    return;
+  }
+
+  const values = data.map(d => d.tokens);
+  const max = Math.max(...values, 1);
+  const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim() || '#2563eb';
+
+  // Fill area
+  const grad = ctx.createLinearGradient(0, 0, 0, h);
+  grad.addColorStop(0, accentColor + '30');
+  grad.addColorStop(1, accentColor + '05');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.moveTo(0, h);
+  values.forEach((v, i) => {
+    const x = (i / (values.length - 1)) * w;
+    const y = h - (v / max) * h * 0.82 - 2;
+    ctx.lineTo(x, y);
+  });
+  ctx.lineTo(w, h);
+  ctx.closePath();
+  ctx.fill();
+
+  // Line
+  ctx.strokeStyle = accentColor;
+  ctx.lineWidth = 1.5;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  values.forEach((v, i) => {
+    const x = (i / (values.length - 1)) * w;
+    const y = h - (v / max) * h * 0.82 - 2;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+
+  // Dot on last point
+  const lastX = w;
+  const lastY = h - (values[values.length - 1] / max) * h * 0.82 - 2;
+  ctx.beginPath();
+  ctx.arc(lastX, lastY, 2.5, 0, Math.PI * 2);
+  ctx.fillStyle = accentColor;
+  ctx.fill();
+}
+
+function renderRateLimits() {
+  const container = document.getElementById('rateLimitBars');
+  if (!container) return;
+  container.innerHTML = '';
+
+  for (const [name, rl] of Object.entries(RATE_LIMITS)) {
+    const pct = Math.min((rl.used / rl.limit) * 100, 100);
+    let barColor = rl.color;
+    if (pct > 80) barColor = '#dc2626';
+    else if (pct > 50) barColor = '#d97706';
+
+    const row = document.createElement('div');
+    row.className = 'ratelimit-row';
+    row.innerHTML = `
+      <span class="ratelimit-label">${name}</span>
+      <div class="ratelimit-bar-bg">
+        <div class="ratelimit-bar-fill" style="width:${pct}%;background:${barColor}"></div>
+      </div>
+      <span class="ratelimit-pct">${Math.round(pct)}%</span>
+    `;
+    row.title = `${rl.used} / ${rl.limit.toLocaleString()} ${rl.type} used`;
+    container.appendChild(row);
+  }
+}
+
+function renderUsageTable() {
+  const tbody = document.getElementById('usageTableBody');
+  if (!tbody) return;
+
+  if (usageLog.length === 0) {
+    tbody.innerHTML = `<div class="usage-empty">
+      <div class="usage-empty-icon"><svg style="width:18px;height:18px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20v-4"/></svg></div>
+      <div class="usage-empty-text">No API calls yet</div>
+    </div>`;
+    return;
+  }
+
+  const rows = usageLog.slice(0, usageDisplayMax);
+  let html = '';
+  rows.forEach((r, i) => {
+    const costStr = r.cost === 0 ? 'Free' : formatCost(r.cost);
+    const costClass = r.cost === 0 ? 'usage-cost free' : 'usage-cost';
+    const latStr = r.latency > 1000 ? (r.latency / 1000).toFixed(1) + 's' : r.latency + 'ms';
+    const statusChar = r.status === 'error' ? '⚠' : '✓';
+    const statusClass = r.status === 'error' ? 'usage-status err' : 'usage-status ok';
+    const rowId = 'urow-' + r.id;
+    html += `<div class="usage-row" style="border-left-color:${r.modelColor}" onclick="toggleUsageRow('${rowId}')">
+      <span>${relativeTime(r.timestamp)}</span>
+      <span class="usage-model" title="${escapeHtml(r.model)}">${escapeHtml(r.modelLabel)}</span>
+      <span>${r.inputTokens > 0 ? r.inputTokens.toLocaleString() : '—'}</span>
+      <span>${r.outputTokens > 0 ? r.outputTokens.toLocaleString() : '—'}</span>
+      <span class="${costClass}">${costStr}</span>
+      <span>${r.latency > 0 ? latStr : '—'}</span>
+      <span class="${statusClass}">${statusChar}</span>
+    </div>`;
+    if (r.contentSnippet) {
+      html += `<div class="usage-row-expand" id="${rowId}"><pre>${escapeHtml(r.contentSnippet)}</pre></div>`;
+    }
+  });
+
+  if (usageLog.length > usageDisplayMax) {
+    html += `<div class="usage-load-more" onclick="loadMoreUsage()">Load more (${usageLog.length - usageDisplayMax} remaining)</div>`;
+  }
+
+  tbody.innerHTML = html;
+}
+
+function toggleUsageRow(id) {
+  const el = document.getElementById(id);
+  if (el) el.classList.toggle('open');
+}
+
+function loadMoreUsage() {
+  usageDisplayMax += 50;
+  renderUsageTable();
+}
+
+function updateUsageSessionFooter() {
+  const elapsed = Math.floor((Date.now() - sessionStats.sessionStart) / 1000);
+  const mins = Math.floor(elapsed / 60);
+  const secs = elapsed % 60;
+  const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+
+  const el = document.getElementById('usageSessionTime');
+  if (el) el.textContent = timeStr;
+
+  const costEl = document.getElementById('usageSessionCost');
+  if (costEl) costEl.textContent = formatCost(sessionStats.totalCost);
+
+  const tokEl = document.getElementById('usageSessionTokens');
+  if (tokEl) tokEl.textContent = (sessionStats.inputTokens + sessionStats.outputTokens).toLocaleString();
+}
+
+function updateUsageSidebarFooter() {
+  const totalTok = sessionStats.inputTokens + sessionStats.outputTokens;
+  const row = document.getElementById('usageFooterRow');
+  const val = document.getElementById('usageFooterValue');
+  if (row && val && totalTok > 0) {
+    row.style.display = 'flex';
+    val.textContent = `${formatTokenCount(totalTok)} tok \u00b7 ${formatCost(sessionStats.totalCost)}`;
+  }
+}
+
+function exportUsageCSV() {
+  const headers = 'Time,Model,Input Tokens,Output Tokens,Cost (USD),Latency (ms),Status\n';
+  const rows = usageLog.map(r =>
+    `"${new Date(r.timestamp).toISOString()}","${r.modelLabel}",${r.inputTokens},${r.outputTokens},${r.cost.toFixed(6)},${r.latency},"${r.status}"`
+  ).join('\n');
+  const blob = new Blob([headers + rows], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `ncore-session-${Date.now()}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+// Token counter under composer
+function updateComposerTokenCount() {
+  const input = document.getElementById('composerInput');
+  const counter = document.getElementById('composerTokenCount');
+  if (!input || !counter) return;
+  const text = input.value;
+  if (!text || text.length < 2) {
+    counter.textContent = '';
+    return;
+  }
+  // Rough estimate: ~4 chars per token
+  const est = Math.ceil(text.length / 4);
+  counter.textContent = `~${est.toLocaleString()} tokens`;
+}
+
+// Periodically refresh relative times and session footer
+setInterval(() => {
+  if (usageLog.length > 0) {
+    // Refresh relative times in visible rows
+    const rows = document.querySelectorAll('#usageTableBody .usage-row');
+    const logs = usageLog.slice(0, usageDisplayMax);
+    rows.forEach((row, i) => {
+      if (logs[i]) {
+        const firstSpan = row.querySelector('span');
+        if (firstSpan) firstSpan.textContent = relativeTime(logs[i].timestamp);
+      }
+    });
+  }
+  updateUsageSessionFooter();
+}, 10000);
 
 // Start
 init();
