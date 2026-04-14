@@ -1489,6 +1489,748 @@ ul, ol { list-style: none; }
 @media (max-width: 900px) {
   .sidebar { display: none; }
 }
+
+/* ============================================================
+   v3 — SUPERVISOR STATUS PANEL
+   ============================================================ */
+.supervisor-status {
+  margin: 0 12px 8px;
+  padding: 10px 12px;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.supervisor-status:hover { background: var(--color-surface-3); }
+.supervisor-status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.supervisor-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.supervisor-dot.healthy { background: var(--color-success); box-shadow: 0 0 6px rgba(22, 163, 74, 0.4); }
+.supervisor-dot.warning { background: var(--color-warning); box-shadow: 0 0 6px rgba(217, 119, 6, 0.4); }
+.supervisor-dot.critical { background: var(--color-error); box-shadow: 0 0 6px rgba(220, 38, 38, 0.4); }
+.supervisor-check-time {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  margin-top: 4px;
+}
+.supervisor-details {
+  display: none;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border);
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  line-height: 1.6;
+}
+.supervisor-details.open { display: block; }
+.supervisor-detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 2px 0;
+}
+.supervisor-detail-row .label { color: var(--color-text-tertiary); }
+.supervisor-detail-row .value { font-family: var(--font-mono); font-weight: 500; font-size: 10px; }
+
+/* ============================================================
+   v3 — MODEL SWITCHER DROPDOWN
+   ============================================================ */
+.model-badge {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-2);
+  color: var(--color-text-tertiary);
+  margin-left: auto;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  position: relative;
+  user-select: none;
+}
+.model-badge:hover {
+  background: var(--color-surface-3);
+  color: var(--color-text-secondary);
+}
+.model-badge::after {
+  content: '';
+  display: inline-block;
+  width: 0;
+  height: 0;
+  border-left: 3px solid transparent;
+  border-right: 3px solid transparent;
+  border-top: 4px solid currentColor;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.model-switcher {
+  display: none;
+  position: absolute;
+  bottom: 100%;
+  right: 0;
+  margin-bottom: 8px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  min-width: 340px;
+  max-height: 420px;
+  overflow-y: auto;
+  padding: 8px;
+  z-index: 200;
+  animation: dropdownIn 0.15s ease-out;
+}
+.model-switcher.open { display: block; }
+
+@keyframes dropdownIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.model-group-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+  padding: 8px 10px 4px;
+}
+
+.model-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+.model-option:hover { background: var(--color-surface-2); }
+.model-option.selected { background: var(--color-accent-subtle); }
+
+.model-option-radio {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid var(--color-border-strong);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: border-color var(--transition-fast);
+}
+.model-option.selected .model-option-radio {
+  border-color: var(--color-accent);
+}
+.model-option.selected .model-option-radio::after {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-accent);
+}
+
+.model-option-info { flex: 1; min-width: 0; }
+.model-option-name {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-text);
+  line-height: 1.3;
+}
+.model-option-meta {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  margin-top: 1px;
+}
+.model-option-tag {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: var(--radius-full);
+  background: var(--color-accent-subtle);
+  color: var(--color-accent);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+}
+
+/* ============================================================
+   v3 — SETTINGS PANEL
+   ============================================================ */
+.settings-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.3);
+  z-index: 900;
+  animation: fadeIn 0.2s ease;
+}
+.settings-overlay.open { display: block; }
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.settings-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 400px;
+  height: 100dvh;
+  background: var(--color-surface);
+  border-left: 1px solid var(--color-border);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  transform: translateX(100%);
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: -8px 0 32px rgba(0, 0, 0, 0.1);
+}
+.settings-panel.open { transform: translateX(0); }
+
+[data-theme="dark"] .settings-panel {
+  box-shadow: -8px 0 32px rgba(0, 0, 0, 0.4);
+}
+
+.settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+.settings-title {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 700;
+}
+.settings-close {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  transition: all var(--transition-fast);
+}
+.settings-close:hover { background: var(--color-surface-2); color: var(--color-text); }
+.settings-close svg { width: 18px; height: 18px; }
+
+.settings-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px;
+}
+
+.settings-section {
+  margin-bottom: 24px;
+}
+.settings-section-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  margin-bottom: 12px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.settings-field {
+  margin-bottom: 12px;
+}
+.settings-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  margin-bottom: 4px;
+}
+.settings-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  font-size: var(--text-sm);
+  transition: border-color var(--transition-fast);
+}
+.settings-input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-subtle);
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.settings-btn {
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-2);
+  color: var(--color-text);
+}
+.settings-btn:hover {
+  background: var(--color-surface-3);
+  border-color: var(--color-border-strong);
+}
+.settings-btn.primary {
+  background: var(--color-accent);
+  color: white;
+  border-color: var(--color-accent);
+}
+.settings-btn.primary:hover {
+  background: var(--color-accent-hover);
+}
+
+.settings-conn-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  margin-bottom: 12px;
+}
+
+.settings-conn-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.settings-conn-dot.ok { background: var(--color-success); }
+.settings-conn-dot.err { background: var(--color-error); }
+.settings-conn-dot.testing { background: var(--color-warning); animation: pulse 1.2s infinite; }
+
+/* Toggle switch */
+.toggle-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--color-border);
+}
+.toggle-wrap:last-child { border-bottom: none; }
+.toggle-label {
+  font-size: 12px;
+  color: var(--color-text);
+  flex: 1;
+  line-height: 1.4;
+}
+.toggle-switch {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.toggle-switch input { display: none; }
+.toggle-track {
+  position: absolute;
+  inset: 0;
+  background: var(--color-surface-3);
+  border-radius: 10px;
+  transition: background var(--transition-fast);
+}
+.toggle-switch input:checked + .toggle-track { background: var(--color-accent); }
+.toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: white;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  transition: transform var(--transition-fast);
+}
+.toggle-switch input:checked ~ .toggle-thumb { transform: translateX(16px); }
+
+/* Preset buttons */
+.presets-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.preset-btn {
+  padding: 10px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  background: var(--color-bg);
+  color: var(--color-text-secondary);
+}
+.preset-btn:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  background: var(--color-accent-subtle);
+}
+.preset-btn.active {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  background: var(--color-accent-subtle);
+}
+.preset-btn-icon { font-size: 16px; display: block; margin-bottom: 4px; }
+
+/* Slider */
+.settings-slider-wrap {
+  margin-bottom: 12px;
+}
+.settings-slider-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  margin-top: 4px;
+}
+.settings-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--color-surface-3);
+  outline: none;
+  margin: 8px 0;
+}
+.settings-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+}
+
+/* Appearance toggles */
+.appearance-toggle-group {
+  display: flex;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+.appearance-toggle-opt {
+  flex: 1;
+  padding: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  color: var(--color-text-secondary);
+  background: var(--color-bg);
+  border-right: 1px solid var(--color-border);
+}
+.appearance-toggle-opt:last-child { border-right: none; }
+.appearance-toggle-opt:hover { background: var(--color-surface-2); }
+.appearance-toggle-opt.active {
+  background: var(--color-accent);
+  color: white;
+}
+
+/* System info */
+.system-info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0;
+  font-size: 12px;
+  border-bottom: 1px solid var(--color-border);
+}
+.system-info-row:last-child { border-bottom: none; }
+.system-info-label { color: var(--color-text-tertiary); }
+.system-info-value { font-family: var(--font-mono); font-weight: 500; font-size: 11px; }
+
+/* ============================================================
+   v3 — BROWSER LIVE VIEW (enhanced)
+   ============================================================ */
+.browser-live-container {
+  transition: opacity 0.3s ease;
+}
+.browser-live-container.active {
+  animation: browserFadeIn 0.4s ease;
+}
+@keyframes browserFadeIn {
+  from { opacity: 0; transform: scale(0.98); }
+  to { opacity: 1; transform: scale(1); }
+}
+.browser-view-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+.browser-url {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--color-accent);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 4px 8px;
+  background: var(--color-bg);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+}
+.browser-action {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  font-style: italic;
+}
+.browser-screenshot {
+  width: 100%;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+}
+.browser-refresh-badge {
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  margin-top: 4px;
+  text-align: right;
+  font-family: var(--font-mono);
+}
+
+/* ============================================================
+   v3 — MEMORY PANEL ENHANCEMENT
+   ============================================================ */
+.memory-search-wrap {
+  position: relative;
+  margin-bottom: 12px;
+}
+.memory-search {
+  width: 100%;
+  padding: 8px 12px 8px 32px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  font-size: var(--text-sm);
+  transition: border-color var(--transition-fast);
+}
+.memory-search:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-subtle);
+}
+.memory-search-icon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 14px;
+  height: 14px;
+  color: var(--color-text-tertiary);
+}
+
+.memory-group-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  padding: 10px 0 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.memory-group-count {
+  font-size: 9px;
+  font-weight: 700;
+  background: var(--color-surface-3);
+  border-radius: var(--radius-full);
+  padding: 1px 6px;
+  color: var(--color-text-tertiary);
+}
+
+.memory-card {
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.memory-card:hover { background: var(--color-surface-2); border-color: var(--color-border-strong); }
+
+.memory-card-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.memory-card-time {
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+}
+.memory-card-badge {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: var(--radius-full);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.memory-card-badge.session { background: var(--color-accent-subtle); color: var(--color-accent); }
+.memory-card-badge.persistent { background: var(--color-success-light); color: var(--color-success); }
+.memory-card-badge.skill { background: var(--color-warning-light); color: var(--color-warning); }
+
+.memory-card-relevance {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: var(--color-text-tertiary);
+  margin-left: auto;
+}
+
+.memory-card-text {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.memory-card-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+.memory-inject-btn {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.memory-inject-btn:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  background: var(--color-accent-subtle);
+}
+
+/* Memory detail side panel */
+.memory-detail-overlay {
+  display: none;
+  position: absolute;
+  inset: 0;
+  background: var(--color-surface);
+  z-index: 50;
+  flex-direction: column;
+  animation: slideInRight 0.2s ease;
+}
+.memory-detail-overlay.open { display: flex; }
+
+@keyframes slideInRight {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+.memory-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--color-border);
+}
+.memory-detail-back {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.memory-detail-back:hover { background: var(--color-surface-2); }
+.memory-detail-back svg { width: 16px; height: 16px; }
+.memory-detail-title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+.memory-detail-body {
+  flex: 1;
+  padding: 16px;
+  overflow-y: auto;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--color-text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Memory tab badge */
+.tab-badge {
+  font-size: 9px;
+  font-weight: 700;
+  background: var(--color-accent);
+  color: white;
+  border-radius: var(--radius-full);
+  padding: 1px 5px;
+  margin-left: 4px;
+  min-width: 16px;
+  text-align: center;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+/* ============================================================
+   v3 — GEAR ICON in task header
+   ============================================================ */
+.gear-btn {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+.gear-btn:hover { background: var(--color-surface-2); color: var(--color-text); }
+.gear-btn svg { width: 18px; height: 18px; }
+
 </style>
 </head>
 <body>
@@ -1502,13 +2244,45 @@ ul, ol { list-style: none; }
           <div class="logo-text">NCore</div>
         </div>
       </div>
-      <span class="logo-badge">v2</span>
+      <span class="logo-badge">v3</span>
     </div>
 
     <button class="new-task-btn" onclick="createNewTask()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
       New Task
     </button>
+
+
+    <!-- v3: Supervisor Status -->
+    <div class="supervisor-status" id="supervisorStatus" onclick="toggleSupervisorDetails()">
+      <div class="supervisor-status-row">
+        <div class="supervisor-dot healthy" id="supervisorDot"></div>
+        <span id="supervisorText">All systems healthy</span>
+      </div>
+      <div class="supervisor-check-time" id="supervisorCheckTime">Last check: just now</div>
+      <div class="supervisor-details" id="supervisorDetails">
+        <div class="supervisor-detail-row">
+          <span class="label">Agent Zero</span>
+          <span class="value" id="supDetailAgent" style="color:var(--color-success)">● Online</span>
+        </div>
+        <div class="supervisor-detail-row">
+          <span class="label">WebSocket</span>
+          <span class="value" id="supDetailWS">● Connected</span>
+        </div>
+        <div class="supervisor-detail-row">
+          <span class="label">Models</span>
+          <span class="value" id="supDetailModels">3 available</span>
+        </div>
+        <div class="supervisor-detail-row">
+          <span class="label">Memory</span>
+          <span class="value" id="supDetailMemory">OK</span>
+        </div>
+        <div class="supervisor-detail-row">
+          <span class="label">Last Error</span>
+          <span class="value" id="supDetailError" style="color:var(--color-text-tertiary)">None</span>
+        </div>
+      </div>
+    </div>
 
     <div class="sessions-section" id="sessionsList">
       <div class="section-label">Recent</div>
@@ -1569,6 +2343,9 @@ ul, ol { list-style: none; }
       <div class="task-header-right">
         <button class="icon-btn" onclick="toggleDrawer()" title="Toggle panel" aria-label="Toggle right panel">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
+        </button>
+        <button class="gear-btn" onclick="openSettings()" title="Settings" aria-label="Settings">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12.22 2h-.44a2 2 0 00-2 2v.18a2 2 0 01-1 1.73l-.43.25a2 2 0 01-2 0l-.15-.08a2 2 0 00-2.73.73l-.22.38a2 2 0 00.73 2.73l.15.1a2 2 0 011 1.72v.51a2 2 0 01-1 1.74l-.15.09a2 2 0 00-.73 2.73l.22.38a2 2 0 002.73.73l.15-.08a2 2 0 012 0l.43.25a2 2 0 011 1.73V20a2 2 0 002 2h.44a2 2 0 002-2v-.18a2 2 0 011-1.73l.43-.25a2 2 0 012 0l.15.08a2 2 0 002.73-.73l.22-.39a2 2 0 00-.73-2.73l-.15-.08a2 2 0 01-1-1.74v-.5a2 2 0 011-1.74l.15-.09a2 2 0 00.73-2.73l-.22-.38a2 2 0 00-2.73-.73l-.15.08a2 2 0 01-2 0l-.43-.25a2 2 0 01-1-1.73V4a2 2 0 00-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
         </button>
         <button class="theme-toggle" data-theme-toggle aria-label="Toggle dark mode" onclick="toggleTheme()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
@@ -1638,7 +2415,56 @@ ul, ol { list-style: none; }
             <div class="skill-dropdown-item" onclick="selectSkill('research-agent', this)">🧠 research-agent</div>
           </div>
         </button>
-        <span class="model-badge" id="modelBadge">claude-sonnet-4</span>
+        <span class="model-badge" id="modelBadge" onclick="toggleModelSwitcher(event)">Auto (Intelligent)
+          <div class="model-switcher" id="modelSwitcher">
+            <div class="model-group-label">Free Tier</div>
+            <div class="model-option" data-model="gemini-2.5-flash" onclick="selectModel('gemini-2.5-flash', this, event)">
+              <div class="model-option-radio"></div>
+              <div class="model-option-info">
+                <div class="model-option-name">Gemini 2.5 Flash</div>
+                <div class="model-option-meta">1M ctx · fast · vision</div>
+              </div>
+            </div>
+            <div class="model-option" data-model="groq/llama-3.1-8b-instant" onclick="selectModel('groq/llama-3.1-8b-instant', this, event)">
+              <div class="model-option-radio"></div>
+              <div class="model-option-info">
+                <div class="model-option-name">Groq Llama 3.1 8B</div>
+                <div class="model-option-meta">128K · fastest · utility</div>
+              </div>
+            </div>
+            <div class="model-option" data-model="groq/llama-3.3-70b-versatile" onclick="selectModel('groq/llama-3.3-70b-versatile', this, event)">
+              <div class="model-option-radio"></div>
+              <div class="model-option-info">
+                <div class="model-option-name">Groq Llama 3.3 70B</div>
+                <div class="model-option-meta">128K · smart · general</div>
+              </div>
+            </div>
+            <div class="model-group-label">Paid</div>
+            <div class="model-option" data-model="deepseek-chat" onclick="selectModel('deepseek-chat', this, event)">
+              <div class="model-option-radio"></div>
+              <div class="model-option-info">
+                <div class="model-option-name">DeepSeek Chat</div>
+                <div class="model-option-meta">128K · $0.27/M · strong</div>
+              </div>
+            </div>
+            <div class="model-option" data-model="venice-uncensored" onclick="selectModel('venice-uncensored', this, event)">
+              <div class="model-option-radio"></div>
+              <div class="model-option-info">
+                <div class="model-option-name">Venice Uncensored</div>
+                <div class="model-option-meta">64K · $0/day · no-filter</div>
+              </div>
+            </div>
+            <div class="model-group-label">Routing</div>
+            <div class="model-option selected" data-model="auto" onclick="selectModel('auto', this, event)">
+              <div class="model-option-radio"></div>
+              <div class="model-option-info">
+                <div class="model-option-name">Auto (Intelligent)</div>
+                <div class="model-option-meta">routes by task type</div>
+              </div>
+              <span class="model-option-tag">Recommended</span>
+            </div>
+          </div>
+        </span>
         <span class="composer-token-count" id="composerTokenCount"></span>
       </div>
     </div>
@@ -1660,7 +2486,7 @@ ul, ol { list-style: none; }
       </button>
       <button class="drawer-tab" onclick="switchDrawerTab('memory', this)">
         <span class="drawer-tab-icon">🧠</span>
-        <span>Memory</span>
+        <span>Memory<span class="tab-badge" id="memoryTabBadge" style="display:none">0</span></span>
       </button>
       <button class="drawer-tab" onclick="switchDrawerTab('usage', this)">
         <span class="drawer-tab-icon"><svg style="width:14px;height:14px;vertical-align:middle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20v-4"/></svg></span>
@@ -1669,10 +2495,15 @@ ul, ol { list-style: none; }
     </div>
     <div class="drawer-content">
       <div class="drawer-panel active" id="panelLive">
-        <div class="live-empty">
-          <div class="live-empty-icon">📡</div>
-          <div class="live-empty-text">Agent activity will appear here</div>
+        <div id="browserLiveContainer" class="browser-live-container">
+          <div class="live-empty" id="browserLiveEmpty">
+            <div class="live-empty-icon">📡</div>
+            <div class="live-empty-text">No browser activity</div>
+            <div style="font-size:11px;color:var(--color-text-tertiary);margin-top:4px">Screenshots will appear here when browser automation is active</div>
+          </div>
         </div>
+        <!-- Agent activity entries -->
+        <div id="liveActivityEntries"></div>
       </div>
       <div class="drawer-panel" id="panelFiles">
         <div class="files-empty">
@@ -1680,10 +2511,35 @@ ul, ol { list-style: none; }
           <div class="files-empty-text">No files yet</div>
         </div>
       </div>
-      <div class="drawer-panel" id="panelMemory">
-        <div class="memory-empty">
+      <div class="drawer-panel" id="panelMemory" style="position:relative;">
+        <!-- Memory search -->
+        <div class="memory-search-wrap">
+          <svg class="memory-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+          <input type="text" class="memory-search" id="memorySearch" placeholder="Search memories..." oninput="filterMemories()">
+        </div>
+        <!-- Session memories -->
+        <div class="memory-group-label">Session <span class="memory-group-count" id="memSessionCount">0</span></div>
+        <div id="memSessionList"></div>
+        <!-- Persistent memories -->
+        <div class="memory-group-label">Persistent <span class="memory-group-count" id="memPersistentCount">0</span></div>
+        <div id="memPersistentList"></div>
+        <!-- Skills memories -->
+        <div class="memory-group-label">Skills <span class="memory-group-count" id="memSkillsCount">0</span></div>
+        <div id="memSkillsList"></div>
+        <!-- Empty state (shown when all groups are empty) -->
+        <div class="memory-empty" id="memoryEmptyState">
           <div class="memory-empty-icon">🧠</div>
-          <div class="memory-empty-text">Memory entries will appear here</div>
+          <div class="memory-empty-text">No memories yet</div>
+        </div>
+        <!-- Memory detail overlay -->
+        <div class="memory-detail-overlay" id="memoryDetailOverlay">
+          <div class="memory-detail-header">
+            <button class="memory-detail-back" onclick="closeMemoryDetail()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+            </button>
+            <span class="memory-detail-title" id="memoryDetailTitle">Memory</span>
+          </div>
+          <div class="memory-detail-body" id="memoryDetailBody"></div>
         </div>
       </div>
       <div class="drawer-panel" id="panelUsage">
@@ -1752,9 +2608,194 @@ ul, ol { list-style: none; }
       </div>
     </div>
   </aside>
+
+  <!-- v3: Settings Overlay -->
+  <div class="settings-overlay" id="settingsOverlay" onclick="closeSettings()"></div>
+
+  <!-- v3: Settings Panel -->
+  <div class="settings-panel" id="settingsPanel">
+    <div class="settings-header">
+      <span class="settings-title">Settings</span>
+      <button class="settings-close" onclick="closeSettings()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="settings-body">
+
+      <!-- Connection -->
+      <div class="settings-section">
+        <div class="settings-section-title">Connection</div>
+        <div class="settings-conn-status" id="settingsConnStatus">
+          <div class="settings-conn-dot" id="settingsConnDot"></div>
+          <span id="settingsConnText">Not tested</span>
+          <span id="settingsConnLatency" style="margin-left:auto;font-family:var(--font-mono);font-size:11px;color:var(--color-text-tertiary)"></span>
+        </div>
+        <div class="settings-field">
+          <label class="settings-label">Agent Zero URL</label>
+          <input type="text" class="settings-input" id="settingsBaseUrl" placeholder="http://localhost:8090" value="">
+        </div>
+        <div class="settings-field">
+          <label class="settings-label">API Key</label>
+          <input type="password" class="settings-input" id="settingsApiKey" placeholder="Enter API key">
+        </div>
+        <button class="settings-btn" onclick="testConnection()" id="testConnBtn">Test Connection</button>
+      </div>
+
+      <!-- Models -->
+      <div class="settings-section">
+        <div class="settings-section-title">Models</div>
+        <div class="settings-label" style="margin-bottom:8px">Quick Presets</div>
+        <div class="presets-grid">
+          <button class="preset-btn" onclick="applyPreset('speed')">
+            <span class="preset-btn-icon">⚡</span>Speed
+          </button>
+          <button class="preset-btn" onclick="applyPreset('smart')">
+            <span class="preset-btn-icon">🧠</span>Smart
+          </button>
+          <button class="preset-btn" onclick="applyPreset('uncensored')">
+            <span class="preset-btn-icon">🔓</span>Uncensored
+          </button>
+        </div>
+        <div class="settings-field">
+          <label class="settings-label">Chat Model</label>
+          <select class="settings-input" id="settingsChatModel" onchange="updateChatModel(this.value)">
+            <option value="auto">Auto (Intelligent Routing)</option>
+            <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+            <option value="groq/llama-3.1-8b-instant">Groq Llama 3.1 8B</option>
+            <option value="groq/llama-3.3-70b-versatile">Groq Llama 3.3 70B</option>
+            <option value="deepseek-chat">DeepSeek Chat</option>
+            <option value="venice-uncensored">Venice Uncensored</option>
+          </select>
+        </div>
+        <div class="settings-field">
+          <label class="settings-label">Utility Model</label>
+          <select class="settings-input" id="settingsUtilModel">
+            <option value="groq/llama-3.1-8b-instant">Groq Llama 3.1 8B (fast)</option>
+            <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Agent Behavior -->
+      <div class="settings-section">
+        <div class="settings-section-title">Agent Behavior</div>
+        <div class="toggle-wrap">
+          <span class="toggle-label">Enable no-refuse routing</span>
+          <label class="toggle-switch">
+            <input type="checkbox" id="settingsNoRefuse">
+            <div class="toggle-track"></div>
+            <div class="toggle-thumb"></div>
+          </label>
+        </div>
+        <div class="toggle-wrap">
+          <span class="toggle-label">Auto task decomposition</span>
+          <label class="toggle-switch">
+            <input type="checkbox" id="settingsAutoDecomp">
+            <div class="toggle-track"></div>
+            <div class="toggle-thumb"></div>
+          </label>
+        </div>
+        <div class="toggle-wrap">
+          <span class="toggle-label">Browser live view</span>
+          <label class="toggle-switch">
+            <input type="checkbox" id="settingsBrowserLive" checked>
+            <div class="toggle-track"></div>
+            <div class="toggle-thumb"></div>
+          </label>
+        </div>
+        <div class="toggle-wrap">
+          <span class="toggle-label">Memory injection</span>
+          <label class="toggle-switch">
+            <input type="checkbox" id="settingsMemoryInject">
+            <div class="toggle-track"></div>
+            <div class="toggle-thumb"></div>
+          </label>
+        </div>
+        <div class="settings-slider-wrap" style="margin-top:8px">
+          <label class="settings-label">Refusal sensitivity</label>
+          <input type="range" class="settings-slider" id="settingsRefusalSlider" min="0" max="2" step="1" value="1">
+          <div class="settings-slider-labels">
+            <span>Low</span><span>Medium</span><span>High</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- API Keys -->
+      <div class="settings-section">
+        <div class="settings-section-title">API Keys</div>
+        <div class="settings-field">
+          <label class="settings-label">Gemini API Key</label>
+          <input type="password" class="settings-input" id="settingsKeyGemini" placeholder="AIza...">
+        </div>
+        <div class="settings-field">
+          <label class="settings-label">Groq API Key</label>
+          <input type="password" class="settings-input" id="settingsKeyGroq" placeholder="gsk_...">
+        </div>
+        <div class="settings-field">
+          <label class="settings-label">Venice API Key</label>
+          <input type="password" class="settings-input" id="settingsKeyVenice" placeholder="venice-...">
+        </div>
+        <div class="settings-field">
+          <label class="settings-label">Vast.ai Key</label>
+          <input type="password" class="settings-input" id="settingsKeyVast" placeholder="vast-...">
+        </div>
+        <div class="settings-field">
+          <label class="settings-label">OpenRouter Key</label>
+          <input type="password" class="settings-input" id="settingsKeyOpenRouter" placeholder="sk-or-...">
+        </div>
+        <button class="settings-btn primary" onclick="saveAllSettings()" style="width:100%;margin-top:4px">Save All</button>
+      </div>
+
+      <!-- Appearance -->
+      <div class="settings-section">
+        <div class="settings-section-title">Appearance</div>
+        <div class="settings-label" style="margin-bottom:6px">Theme</div>
+        <div class="appearance-toggle-group" id="themeToggleGroup">
+          <div class="appearance-toggle-opt" data-theme-opt="light" onclick="setThemeSetting('light')">Light</div>
+          <div class="appearance-toggle-opt" data-theme-opt="dark" onclick="setThemeSetting('dark')">Dark</div>
+          <div class="appearance-toggle-opt" data-theme-opt="system" onclick="setThemeSetting('system')">System</div>
+        </div>
+        <div class="settings-label" style="margin-bottom:6px">Density</div>
+        <div class="appearance-toggle-group" id="densityToggleGroup">
+          <div class="appearance-toggle-opt" data-density="compact" onclick="setDensity('compact')">Compact</div>
+          <div class="appearance-toggle-opt active" data-density="comfortable" onclick="setDensity('comfortable')">Comfortable</div>
+          <div class="appearance-toggle-opt" data-density="spacious" onclick="setDensity('spacious')">Spacious</div>
+        </div>
+        <div class="settings-slider-wrap">
+          <label class="settings-label">Font Size</label>
+          <input type="range" class="settings-slider" id="fontSizeSlider" min="12" max="18" step="1" value="14" oninput="setFontSize(this.value)">
+          <div class="settings-slider-labels">
+            <span>12px</span><span>14px</span><span>16px</span><span>18px</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- System -->
+      <div class="settings-section">
+        <div class="settings-section-title">System</div>
+        <div class="system-info-row">
+          <span class="system-info-label">Dashboard</span>
+          <span class="system-info-value">v3.0.0</span>
+        </div>
+        <div class="system-info-row">
+          <span class="system-info-label">Agent Zero</span>
+          <span class="system-info-value" id="sysAgentVersion">—</span>
+        </div>
+        <div class="system-info-row">
+          <span class="system-info-label">Last Supervisor</span>
+          <span class="system-info-value" id="sysLastSupervisor">—</span>
+        </div>
+        <button class="settings-btn" onclick="runHealthCheck()" style="width:100%;margin-top:8px">Run Health Check Now</button>
+      </div>
+
+    </div>
+  </div>
+
 </div>
 
 <script>
+
+
 // ============================================================
 // STATE
 // ============================================================
@@ -1781,9 +2822,9 @@ let state = {
 // API HELPERS
 // ============================================================
 async function apiFetch(path, options = {}) {
-  const url = `${API_BASE}${path}`;
+  const url = `${(window._apiBase || API_BASE)}${path}`;
   const headers = {
-    'X-API-KEY': API_KEY,
+    'X-API-KEY': (window._apiKey || API_KEY),
     'Content-Type': 'application/json',
     ...options.headers,
   };
@@ -2518,10 +3559,708 @@ function formatTime(timestamp) {
   }
 }
 
+
+// ============================================================
+// v3 — SETTINGS PERSISTENCE
+// ============================================================
+const SETTINGS_KEYS = [
+  'ncoreBaseUrl', 'ncoreApiKey', 'ncoreSelectedModel', 'ncoreThemeSetting',
+  'ncoreDensity', 'ncoreFontSize', 'ncoreNoRefuse', 'ncoreAutoDecomp',
+  'ncoreBrowserLive', 'ncoreMemoryInject', 'ncoreRefusalSensitivity',
+  'ncoreKeyChatModel', 'ncoreKeyUtilModel',
+  'ncoreKeyGemini', 'ncoreKeyGroq', 'ncoreKeyVenice', 'ncoreKeyVast', 'ncoreKeyOpenRouter'
+];
+
+function loadSettings() {
+  try {
+    const baseUrl = (_store['ncoreBaseUrl'] ?? null);
+    const apiKey = (_store['ncoreApiKey'] ?? null);
+    if (baseUrl) {
+      document.getElementById('settingsBaseUrl').value = baseUrl;
+      // Update global API_BASE
+      window._apiBase = baseUrl;
+    }
+    if (apiKey) {
+      document.getElementById('settingsApiKey').value = apiKey;
+      window._apiKey = apiKey;
+    }
+
+    const selectedModel = (_store['ncoreSelectedModel'] ?? null) || 'auto';
+    setModelSelection(selectedModel, false);
+
+    // Theme
+    const themeSetting = (_store['ncoreThemeSetting'] ?? null) || 'light';
+    setThemeSetting(themeSetting, true);
+
+    // Density
+    const density = (_store['ncoreDensity'] ?? null) || 'comfortable';
+    setDensity(density, true);
+
+    // Font size
+    const fontSize = (_store['ncoreFontSize'] ?? null) || '14';
+    document.getElementById('fontSizeSlider').value = fontSize;
+    setFontSize(fontSize, true);
+
+    // Toggles
+    document.getElementById('settingsNoRefuse').checked = (_store['ncoreNoRefuse'] ?? null) === 'true';
+    document.getElementById('settingsAutoDecomp').checked = (_store['ncoreAutoDecomp'] ?? null) === 'true';
+    document.getElementById('settingsBrowserLive').checked = (_store['ncoreBrowserLive'] ?? null) !== 'false';
+    document.getElementById('settingsMemoryInject').checked = (_store['ncoreMemoryInject'] ?? null) === 'true';
+
+    // Refusal slider
+    const refusal = (_store['ncoreRefusalSensitivity'] ?? null) || '1';
+    document.getElementById('settingsRefusalSlider').value = refusal;
+
+    // Chat/Util model
+    const chatModel = (_store['ncoreKeyChatModel'] ?? null) || 'auto';
+    document.getElementById('settingsChatModel').value = chatModel;
+    const utilModel = (_store['ncoreKeyUtilModel'] ?? null) || 'groq/llama-3.1-8b-instant';
+    document.getElementById('settingsUtilModel').value = utilModel;
+
+    // API keys
+    const keyFields = { Gemini: 'settingsKeyGemini', Groq: 'settingsKeyGroq', Venice: 'settingsKeyVenice', Vast: 'settingsKeyVast', OpenRouter: 'settingsKeyOpenRouter' };
+    for (const [name, id] of Object.entries(keyFields)) {
+      const val = (_store[`ncoreKey${name}`] ?? null);
+      if (val) document.getElementById(id).value = val;
+    }
+  } catch(e) {
+    console.warn('Failed to load settings:', e);
+  }
+}
+
+function saveAllSettings() {
+  try {
+    (_store['ncoreBaseUrl'] = String(document.getElementById('settingsBaseUrl')).value);
+    (_store['ncoreApiKey'] = String(document.getElementById('settingsApiKey')).value);
+    (_store['ncoreSelectedModel'] = String(state.selectedModelId || 'auto'));
+    (_store['ncoreNoRefuse'] = String(document.getElementById('settingsNoRefuse')).checked);
+    (_store['ncoreAutoDecomp'] = String(document.getElementById('settingsAutoDecomp')).checked);
+    (_store['ncoreBrowserLive'] = String(document.getElementById('settingsBrowserLive')).checked);
+    (_store['ncoreMemoryInject'] = String(document.getElementById('settingsMemoryInject')).checked);
+    (_store['ncoreRefusalSensitivity'] = String(document.getElementById('settingsRefusalSlider')).value);
+    (_store['ncoreKeyChatModel'] = String(document.getElementById('settingsChatModel')).value);
+    (_store['ncoreKeyUtilModel'] = String(document.getElementById('settingsUtilModel')).value);
+
+    // API keys
+    (_store['ncoreKeyGemini'] = String(document.getElementById('settingsKeyGemini')).value);
+    (_store['ncoreKeyGroq'] = String(document.getElementById('settingsKeyGroq')).value);
+    (_store['ncoreKeyVenice'] = String(document.getElementById('settingsKeyVenice')).value);
+    (_store['ncoreKeyVast'] = String(document.getElementById('settingsKeyVast')).value);
+    (_store['ncoreKeyOpenRouter'] = String(document.getElementById('settingsKeyOpenRouter')).value);
+
+    // Update global refs
+    window._apiBase = document.getElementById('settingsBaseUrl').value || API_BASE;
+    window._apiKey = document.getElementById('settingsApiKey').value || API_KEY;
+
+    // Visual feedback
+    const btn = document.querySelector('.settings-section:nth-child(4) .settings-btn.primary');
+    if (btn) {
+      const orig = btn.textContent;
+      btn.textContent = '✓ Saved';
+      btn.style.background = 'var(--color-success)';
+      setTimeout(() => { btn.textContent = orig; btn.style.background = ''; }, 1500);
+    }
+  } catch(e) {
+    console.warn('Failed to save settings:', e);
+  }
+}
+
+// ============================================================
+// v3 — SETTINGS PANEL OPEN/CLOSE
+// ============================================================
+function openSettings() {
+  document.getElementById('settingsOverlay').classList.add('open');
+  document.getElementById('settingsPanel').classList.add('open');
+}
+
+function closeSettings() {
+  document.getElementById('settingsOverlay').classList.remove('open');
+  document.getElementById('settingsPanel').classList.remove('open');
+}
+
+// ============================================================
+// v3 — CONNECTION TEST
+// ============================================================
+async function testConnection() {
+  const btn = document.getElementById('testConnBtn');
+  const dot = document.getElementById('settingsConnDot');
+  const text = document.getElementById('settingsConnText');
+  const latency = document.getElementById('settingsConnLatency');
+  const baseUrl = document.getElementById('settingsBaseUrl').value || API_BASE;
+  const apiKey = document.getElementById('settingsApiKey').value || API_KEY;
+
+  btn.textContent = 'Testing…';
+  dot.className = 'settings-conn-dot testing';
+  text.textContent = 'Connecting…';
+  latency.textContent = '';
+
+  const start = Date.now();
+  try {
+    const res = await fetch(`${baseUrl}/api/health`, {
+      headers: { 'X-API-KEY': apiKey },
+      signal: AbortSignal.timeout(5000)
+    });
+    const elapsed = Date.now() - start;
+
+    if (res.ok) {
+      dot.className = 'settings-conn-dot ok';
+      text.textContent = 'Connected';
+      text.style.color = 'var(--color-success)';
+      latency.textContent = `${elapsed}ms`;
+    } else {
+      dot.className = 'settings-conn-dot err';
+      text.textContent = `HTTP ${res.status}`;
+      text.style.color = 'var(--color-error)';
+    }
+  } catch(e) {
+    dot.className = 'settings-conn-dot err';
+    text.textContent = 'Failed';
+    text.style.color = 'var(--color-error)';
+    latency.textContent = e.message || '';
+  }
+  btn.textContent = 'Test Connection';
+}
+
+// ============================================================
+// v3 — MODEL SWITCHER
+// ============================================================
+state.selectedModelId = 'auto';
+
+function toggleModelSwitcher(e) {
+  e.stopPropagation();
+  const switcher = document.getElementById('modelSwitcher');
+  switcher.classList.toggle('open');
+}
+
+function selectModel(modelId, el, e) {
+  if (e) e.stopPropagation();
+
+  state.selectedModelId = modelId;
+
+  // Update visual selection
+  document.querySelectorAll('.model-option').forEach(opt => opt.classList.remove('selected'));
+  el.classList.add('selected');
+
+  // Update badge text
+  const nameEl = el.querySelector('.model-option-name');
+  const displayName = nameEl ? nameEl.textContent : modelId;
+  const badge = document.getElementById('modelBadge');
+  // Set text of badge (not innerHTML since it contains the dropdown)
+  badge.childNodes[0].textContent = displayName + ' ';
+
+  // Close dropdown
+  document.getElementById('modelSwitcher').classList.remove('open');
+
+  // Update sidebar model display
+  document.getElementById('modelName').textContent = displayName;
+
+  // Update settings panel
+  document.getElementById('settingsChatModel').value = modelId;
+
+  // Persist
+  try { (_store['ncoreSelectedModel'] = String(modelId)); } catch(e) {}
+
+  // Send model switch command to Agent Zero
+  if (modelId !== 'auto') {
+    sendSystemMessage(`[SYSTEM] Switch model to: ${modelId}`);
+  } else {
+    sendSystemMessage('[SYSTEM] Enable intelligent model routing (auto)');
+  }
+}
+
+function setModelSelection(modelId, sendCommand) {
+  state.selectedModelId = modelId;
+  const options = document.querySelectorAll('.model-option');
+  options.forEach(opt => {
+    opt.classList.toggle('selected', opt.getAttribute('data-model') === modelId);
+  });
+
+  const selected = document.querySelector(`.model-option[data-model="${modelId}"]`);
+  if (selected) {
+    const nameEl = selected.querySelector('.model-option-name');
+    const displayName = nameEl ? nameEl.textContent : modelId;
+    const badge = document.getElementById('modelBadge');
+    badge.childNodes[0].textContent = displayName + ' ';
+    document.getElementById('modelName').textContent = displayName;
+    document.getElementById('settingsChatModel').value = modelId;
+  }
+}
+
+function updateChatModel(modelId) {
+  setModelSelection(modelId, false);
+  try { (_store['ncoreSelectedModel'] = String(modelId)); } catch(e) {}
+  if (modelId !== 'auto') {
+    sendSystemMessage(`[SYSTEM] Switch model to: ${modelId}`);
+  }
+}
+
+function sendSystemMessage(text) {
+  // Send via WS if connected
+  if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+    state.ws.send(JSON.stringify({ type: 'system', content: text }));
+  } else {
+    // Fallback: send via API
+    apiFetch('/api/message', {
+      method: 'POST',
+      body: JSON.stringify({
+        message: text,
+        text: text,
+        chat_id: state.currentChatId,
+        system: true
+      })
+    });
+  }
+}
+
+// Close model switcher on outside click
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.model-badge')) {
+    document.getElementById('modelSwitcher').classList.remove('open');
+  }
+});
+
+// ============================================================
+// v3 — PRESETS
+// ============================================================
+function applyPreset(preset) {
+  const presets = {
+    speed: 'groq/llama-3.1-8b-instant',
+    smart: 'gemini-2.5-flash',
+    uncensored: 'venice-uncensored'
+  };
+
+  const modelId = presets[preset];
+  if (!modelId) return;
+
+  // Update model selection
+  const option = document.querySelector(`.model-option[data-model="${modelId}"]`);
+  if (option) {
+    selectModel(modelId, option, null);
+  }
+
+  // Update settings dropdown
+  document.getElementById('settingsChatModel').value = modelId;
+
+  // Highlight preset button
+  document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+  event.target.closest('.preset-btn').classList.add('active');
+}
+
+// ============================================================
+// v3 — THEME/DENSITY/FONT SETTINGS
+// ============================================================
+function setThemeSetting(mode, init) {
+  // Update toggle buttons
+  document.querySelectorAll('#themeToggleGroup .appearance-toggle-opt').forEach(opt => {
+    opt.classList.toggle('active', opt.getAttribute('data-theme-opt') === mode);
+  });
+
+  if (mode === 'system') {
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    document.documentElement.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
+  } else {
+    document.documentElement.setAttribute('data-theme', mode);
+  }
+
+  state.theme = mode;
+  if (!init) {
+    try { (_store['ncoreThemeSetting'] = String(mode)); } catch(e) {}
+  }
+
+  // Update theme toggle icon
+  const currentTheme = document.documentElement.getAttribute('data-theme');
+  const btn = document.querySelector('.theme-toggle');
+  if (btn) {
+    btn.innerHTML = currentTheme === 'dark'
+      ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>'
+      : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
+  }
+}
+
+function setDensity(density, init) {
+  document.querySelectorAll('#densityToggleGroup .appearance-toggle-opt').forEach(opt => {
+    opt.classList.toggle('active', opt.getAttribute('data-density') === density);
+  });
+
+  const scale = { compact: 0.85, comfortable: 1, spacious: 1.15 };
+  const multiplier = scale[density] || 1;
+
+  // Adjust spacing for density
+  document.documentElement.style.setProperty('--density-scale', multiplier);
+
+  if (!init) {
+    try { (_store['ncoreDensity'] = String(density)); } catch(e) {}
+  }
+}
+
+function setFontSize(size, init) {
+  document.documentElement.style.fontSize = size + 'px';
+  if (!init) {
+    try { (_store['ncoreFontSize'] = String(size)); } catch(e) {}
+  }
+}
+
+// ============================================================
+// v3 — BROWSER LIVE VIEW
+// ============================================================
+let browserLiveInterval = null;
+
+function startBrowserLiveView() {
+  if (browserLiveInterval) return;
+  if (!document.getElementById('settingsBrowserLive').checked) return;
+
+  browserLiveInterval = setInterval(async () => {
+    try {
+      const baseUrl = window._apiBase || API_BASE;
+      const apiKey = window._apiKey || API_KEY;
+      const r = await fetch(`${baseUrl}/api/browser-status`, {
+        headers: { 'X-API-KEY': apiKey },
+        signal: AbortSignal.timeout(3000)
+      });
+      if (r.ok) {
+        const data = await r.json();
+        updateBrowserView(data);
+      }
+    } catch(e) {
+      // Silently fail — browser may not be active
+    }
+  }, 2000);
+}
+
+function stopBrowserLiveView() {
+  if (browserLiveInterval) {
+    clearInterval(browserLiveInterval);
+    browserLiveInterval = null;
+  }
+}
+
+function updateBrowserView(data) {
+  const container = document.getElementById('browserLiveContainer');
+  const emptyEl = document.getElementById('browserLiveEmpty');
+
+  if (data && data.screenshot_b64) {
+    if (emptyEl) emptyEl.style.display = 'none';
+    container.classList.add('active');
+
+    // Build browser view
+    let html = '<div class="browser-view-header">';
+    if (data.url) {
+      html += `<span class="browser-url">${escapeHtml(data.url)}</span>`;
+    }
+    if (data.action) {
+      html += `<span class="browser-action">${escapeHtml(data.action)}</span>`;
+    }
+    html += '</div>';
+    html += `<img class="browser-screenshot" src="data:image/png;base64,${data.screenshot_b64}" alt="Browser screenshot">`;
+    html += `<div class="browser-refresh-badge">Updated ${new Date().toLocaleTimeString()}</div>`;
+
+    // Only update if different (reduce flicker)
+    const existing = container.querySelector('.browser-screenshot');
+    if (!existing || existing.src !== `data:image/png;base64,${data.screenshot_b64}`) {
+      container.innerHTML = html;
+    }
+  } else if (data && !data.screenshot_b64 && (data.url || data.action)) {
+    // No screenshot but has status
+    if (emptyEl) emptyEl.style.display = 'none';
+    let html = '<div class="browser-view-header">';
+    if (data.url) html += `<span class="browser-url">${escapeHtml(data.url)}</span>`;
+    if (data.action) html += `<span class="browser-action">${escapeHtml(data.action)}</span>`;
+    html += '</div>';
+    html += '<div style="padding:20px;text-align:center;color:var(--color-text-tertiary);font-size:12px">Waiting for screenshot…</div>';
+    container.innerHTML = html;
+  }
+}
+
+// Also update live view from status messages
+const _origUpdateLiveView = updateLiveView;
+updateLiveView = function(data) {
+  _origUpdateLiveView(data);
+  // Add entries to live activity
+  const entries = document.getElementById('liveActivityEntries');
+  if (entries && (data.current_action || data.action)) {
+    const entry = document.createElement('div');
+    entry.className = 'live-entry';
+    entry.innerHTML = `
+      <div class="live-label">Current Action</div>
+      <div class="live-value">${escapeHtml(data.current_action || data.action)}</div>
+    `;
+    entries.appendChild(entry);
+    // Keep last 10
+    while (entries.children.length > 10) entries.removeChild(entries.firstChild);
+  }
+};
+
+// ============================================================
+// v3 — ENHANCED MEMORY PANEL
+// ============================================================
+const memoryStore = {
+  session: [],
+  persistent: [],
+  skills: []
+};
+
+function addMemoryToStore(data) {
+  const type = data.memory_type || data.type || 'session';
+  const entry = {
+    id: Date.now() + Math.random(),
+    text: data.content || data.text || '',
+    fullContent: data.full_content || data.content || data.text || '',
+    type: type === 'skill' || type === 'skills' ? 'skills' : (type === 'persistent' || type === 'long_term' ? 'persistent' : 'session'),
+    timestamp: data.timestamp || new Date().toISOString(),
+    relevance: data.relevance || data.score || null,
+    summary: data.summary || (data.content || data.text || '').substring(0, 100)
+  };
+
+  memoryStore[entry.type].push(entry);
+  renderMemoryPanel();
+  updateMemoryBadge();
+}
+
+// Override existing addMemoryEntry to use new store
+const _origAddMemoryEntry = addMemoryEntry;
+addMemoryEntry = function(data) {
+  addMemoryToStore(data);
+};
+
+function renderMemoryPanel() {
+  const total = memoryStore.session.length + memoryStore.persistent.length + memoryStore.skills.length;
+  const emptyState = document.getElementById('memoryEmptyState');
+
+  if (total === 0) {
+    if (emptyState) emptyState.style.display = '';
+    return;
+  }
+  if (emptyState) emptyState.style.display = 'none';
+
+  const searchTerm = (document.getElementById('memorySearch')?.value || '').toLowerCase();
+
+  renderMemoryGroup('session', memoryStore.session, searchTerm);
+  renderMemoryGroup('persistent', memoryStore.persistent, searchTerm);
+  renderMemoryGroup('skills', memoryStore.skills, searchTerm);
+}
+
+function renderMemoryGroup(type, items, searchTerm) {
+  const listEl = document.getElementById(`mem${type.charAt(0).toUpperCase() + type.slice(1)}List`);
+  const countEl = document.getElementById(`mem${type.charAt(0).toUpperCase() + type.slice(1)}Count`);
+  if (!listEl) return;
+
+  const filtered = searchTerm
+    ? items.filter(m => m.text.toLowerCase().includes(searchTerm) || m.summary.toLowerCase().includes(searchTerm))
+    : items;
+
+  countEl.textContent = filtered.length;
+  listEl.innerHTML = '';
+
+  filtered.forEach(mem => {
+    const card = document.createElement('div');
+    card.className = 'memory-card';
+    card.onclick = () => openMemoryDetail(mem);
+
+    const badgeClass = mem.type === 'session' ? 'session' : mem.type === 'persistent' ? 'persistent' : 'skill';
+    const timeStr = mem.timestamp ? formatTime(mem.timestamp) : 'now';
+    const relevanceStr = mem.relevance !== null ? `${(mem.relevance * 100).toFixed(0)}%` : '';
+
+    card.innerHTML = `
+      <div class="memory-card-header">
+        <span class="memory-card-time">${timeStr}</span>
+        <span class="memory-card-badge ${badgeClass}">${mem.type}</span>
+        ${relevanceStr ? `<span class="memory-card-relevance">${relevanceStr}</span>` : ''}
+      </div>
+      <div class="memory-card-text">${escapeHtml(mem.summary)}</div>
+      <div class="memory-card-actions">
+        <button class="memory-inject-btn" onclick="injectMemory(event, '${mem.id}')">↑ Inject into context</button>
+      </div>
+    `;
+    listEl.appendChild(card);
+  });
+}
+
+function filterMemories() {
+  renderMemoryPanel();
+}
+
+function openMemoryDetail(mem) {
+  const overlay = document.getElementById('memoryDetailOverlay');
+  document.getElementById('memoryDetailTitle').textContent = `${mem.type} memory`;
+  document.getElementById('memoryDetailBody').textContent = mem.fullContent || mem.text;
+  overlay.classList.add('open');
+}
+
+function closeMemoryDetail() {
+  document.getElementById('memoryDetailOverlay').classList.remove('open');
+}
+
+function injectMemory(e, memId) {
+  e.stopPropagation();
+  // Find memory
+  let mem = null;
+  for (const group of Object.values(memoryStore)) {
+    mem = group.find(m => String(m.id) === String(memId));
+    if (mem) break;
+  }
+  if (!mem) return;
+
+  // Send injection command
+  sendSystemMessage(`[SYSTEM] Inject memory context: ${mem.text}`);
+
+  // Visual feedback on button
+  const btn = e.target;
+  const orig = btn.textContent;
+  btn.textContent = '✓ Injected';
+  btn.style.color = 'var(--color-success)';
+  btn.style.borderColor = 'var(--color-success)';
+  setTimeout(() => {
+    btn.textContent = orig;
+    btn.style.color = '';
+    btn.style.borderColor = '';
+  }, 1500);
+}
+
+function updateMemoryBadge() {
+  const total = memoryStore.session.length + memoryStore.persistent.length + memoryStore.skills.length;
+  const badge = document.getElementById('memoryTabBadge');
+  if (badge) {
+    badge.textContent = total;
+    badge.style.display = total > 0 ? 'inline-block' : 'none';
+  }
+}
+
+// ============================================================
+// v3 — SUPERVISOR STATUS
+// ============================================================
+let supervisorLastCheck = Date.now();
+let supervisorState = 'healthy';
+
+function toggleSupervisorDetails() {
+  const details = document.getElementById('supervisorDetails');
+  details.classList.toggle('open');
+}
+
+async function fetchSupervisorStatus() {
+  try {
+    const baseUrl = window._apiBase || API_BASE;
+    const apiKey = window._apiKey || API_KEY;
+    const res = await fetch(`${baseUrl}/api/supervisor-status`, {
+      headers: { 'X-API-KEY': apiKey },
+      signal: AbortSignal.timeout(5000)
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      updateSupervisorUI(data);
+    } else {
+      // Server returned error
+      updateSupervisorUI({ status: 'warning', message: `HTTP ${res.status}` });
+    }
+  } catch(e) {
+    // If server unreachable, still update UI
+    updateSupervisorUI({ status: 'warning', message: 'Cannot reach server' });
+  }
+
+  supervisorLastCheck = Date.now();
+  updateSupervisorCheckTime();
+}
+
+function updateSupervisorUI(data) {
+  const dot = document.getElementById('supervisorDot');
+  const text = document.getElementById('supervisorText');
+  const status = data.status || 'healthy';
+
+  supervisorState = status;
+
+  if (status === 'healthy' || status === 'ok') {
+    dot.className = 'supervisor-dot healthy';
+    text.textContent = data.message || 'All systems healthy';
+  } else if (status === 'warning' || status === 'warn') {
+    dot.className = 'supervisor-dot warning';
+    text.textContent = data.message || 'Warnings detected';
+  } else {
+    dot.className = 'supervisor-dot critical';
+    text.textContent = data.message || 'Critical issues';
+  }
+
+  // Update detail rows if available
+  if (data.agent) document.getElementById('supDetailAgent').innerHTML = data.agent === 'online' ? '<span style="color:var(--color-success)">● Online</span>' : '<span style="color:var(--color-error)">● Offline</span>';
+  if (data.websocket) document.getElementById('supDetailWS').textContent = data.websocket;
+  if (data.models) document.getElementById('supDetailModels').textContent = data.models;
+  if (data.memory) document.getElementById('supDetailMemory').textContent = data.memory;
+  if (data.last_error) document.getElementById('supDetailError').textContent = data.last_error;
+
+  // Also update system info in settings
+  if (data.agent_version) document.getElementById('sysAgentVersion').textContent = data.agent_version;
+  document.getElementById('sysLastSupervisor').textContent = new Date().toLocaleTimeString();
+}
+
+function updateSupervisorCheckTime() {
+  const el = document.getElementById('supervisorCheckTime');
+  if (!el) return;
+  const diff = Date.now() - supervisorLastCheck;
+  if (diff < 60000) {
+    el.textContent = `Last check: ${Math.floor(diff / 1000)}s ago`;
+  } else {
+    el.textContent = `Last check: ${Math.floor(diff / 60000)}m ago`;
+  }
+}
+
+// Update check time display periodically
+setInterval(updateSupervisorCheckTime, 10000);
+
+// ============================================================
+// v3 — HEALTH CHECK
+// ============================================================
+async function runHealthCheck() {
+  const baseUrl = window._apiBase || API_BASE;
+  const apiKey = window._apiKey || API_KEY;
+
+  // Update system section in settings
+  const btn = event.target;
+  btn.textContent = 'Checking…';
+
+  try {
+    // Try health endpoint
+    const start = Date.now();
+    const res = await fetch(`${baseUrl}/api/health`, {
+      headers: { 'X-API-KEY': apiKey },
+      signal: AbortSignal.timeout(5000)
+    });
+    const elapsed = Date.now() - start;
+
+    if (res.ok) {
+      const data = await res.json();
+      btn.textContent = `✓ Healthy (${elapsed}ms)`;
+      btn.style.background = 'var(--color-success)';
+      btn.style.color = 'white';
+      btn.style.borderColor = 'var(--color-success)';
+
+      if (data.version) document.getElementById('sysAgentVersion').textContent = data.version;
+
+      updateSupervisorUI({ status: 'healthy', message: 'All systems healthy', agent: 'online' });
+    } else {
+      btn.textContent = `⚠ HTTP ${res.status}`;
+      btn.style.background = 'var(--color-error-light)';
+      btn.style.color = 'var(--color-error)';
+    }
+  } catch(e) {
+    btn.textContent = '✗ Failed';
+    btn.style.background = 'var(--color-error-light)';
+    btn.style.color = 'var(--color-error)';
+  }
+
+  setTimeout(() => {
+    btn.textContent = 'Run Health Check Now';
+    btn.style.background = '';
+    btn.style.color = '';
+    btn.style.borderColor = '';
+  }, 3000);
+}
+
 // ============================================================
 // INITIALIZATION
 // ============================================================
 function init() {
+  // v3: Load settings from _store
+  loadSettings();
+
   connectWebSocket();
   loadSessions();
   document.getElementById('composerInput').focus();
@@ -2532,6 +4271,16 @@ function init() {
   // Periodically try to fetch health/status
   fetchStatus();
   setInterval(fetchStatus, 15000);
+
+  // v3: Start browser live view polling
+  startBrowserLiveView();
+
+  // v3: Supervisor status check
+  fetchSupervisorStatus();
+  setInterval(fetchSupervisorStatus, 30000);
+
+  // v3: Initialize memory panel
+  renderMemoryPanel();
 }
 
 async function fetchStatus() {
