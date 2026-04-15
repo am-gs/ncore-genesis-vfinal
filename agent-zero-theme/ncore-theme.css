@@ -1,0 +1,246 @@
+/* NCore Theme — Manus.im Inspired for Agent Zero WebUI
+ * Injected via /a0/webui/css/ncore-theme.css
+ * Overrides Agent Zero's default CSS variables for a cleaner, premium look
+ * Based on Manus.im design language: off-white, minimal, premium
+ */
+
+/* ─── Google Fonts Override ─────────────────────────────────────────────── */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&display=swap");
+
+/* ─── Light Mode (Manus-style — default) ────────────────────────────────── */
+:root, .light-mode {
+  /* Core palette — Manus off-white */
+  --color-background-light: #f8f8f6;
+  --color-chat-background-light: #f8f8f6;
+  --color-panel-light: #f0f0ec;
+  --color-message-bg-light: #ffffff;
+  --color-input-light: #ffffff;
+  --color-input-focus-light: #ffffff;
+  --color-table-row-light: #f5f5f3;
+
+  /* Text — near-black, not harsh black */
+  --color-text-light: #1a1a1a;
+  --color-text-muted-light: #6b6b6b;
+  --color-message-text-light: #1a1a1a;
+
+  /* Borders — very subtle */
+  --color-border-light: #e2e2de;
+
+  /* Accent — electric blue (matches Manus) */
+  --color-accent-light: #2563eb;
+  --color-highlight-light: #2563eb;
+  --color-primary-light: #1a1a1a;
+  --color-secondary-light: #f0f0ec;
+
+  /* Errors/warnings */
+  --color-error-text-light: #dc2626;
+  --color-warning-text-light: #d97706;
+
+  /* Typography — Inter for UI, Libre Baskerville for headings */
+  --font-family-main: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-family-heading: "Libre Baskerville", Georgia, serif;
+
+  /* Geometry — slightly larger radius for pill feel */
+  --border-radius: 1.25rem;
+  --border-radius-sm: 0.625rem;
+
+  /* Animation — slightly faster */
+  --transition-speed: 0.2s;
+}
+
+/* ─── Dark Mode — Refined OLED ──────────────────────────────────────────── */
+:root, .dark-mode-override {
+  --color-background-dark: #0f0f0f;
+  --color-chat-background-dark: #141414;
+  --color-panel-dark: #1c1c1c;
+  --color-message-bg-dark: #222222;
+  --color-input-dark: #1c1c1c;
+  --color-input-focus-dark: #222222;
+  --color-table-row-dark: #1e1e1e;
+
+  --color-text-dark: #f0f0f0;
+  --color-text-muted-dark: #9ca3af;
+  --color-message-text-dark: #e8e8e8;
+
+  --color-border-dark: #2a2a2a;
+
+  --color-accent-dark: #3b82f6;
+  --color-highlight-dark: #3b82f6;
+  --color-primary-dark: #9ca3af;
+  --color-secondary-dark: #2a2a2a;
+
+  --color-error-text-dark: #f87171;
+  --color-warning-text-dark: #fbbf24;
+}
+
+/* ─── Typography Enhancements ───────────────────────────────────────────── */
+body {
+  font-family: var(--font-family-main);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  letter-spacing: -0.01em;
+}
+
+h1, h2, h3, .chat-title, .sidebar-title {
+  font-family: var(--font-family-heading);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+/* ─── Sidebar — Cleaner ─────────────────────────────────────────────────── */
+#sidebar, .sidebar {
+  border-right: 1px solid var(--color-border);
+  background: var(--color-panel);
+}
+
+/* Tighter sidebar items */
+.chat-item, .sidebar-item {
+  border-radius: 0.5rem;
+  margin: 0.1rem 0.25rem;
+  padding: 0.45rem 0.75rem;
+  font-size: 0.85rem;
+  transition: background var(--transition-speed);
+}
+
+.chat-item:hover, .sidebar-item:hover {
+  background: color-mix(in srgb, var(--color-accent) 8%, transparent);
+}
+
+.chat-item.active, .chat-item.selected {
+  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  border-left: 2px solid var(--color-accent);
+}
+
+/* ─── Message Area ──────────────────────────────────────────────────────── */
+.message-user {
+  background: color-mix(in srgb, var(--color-accent) 8%, var(--color-message-bg));
+  border-radius: var(--border-radius);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 15%, transparent);
+}
+
+.message-ai, .message-agent {
+  background: var(--color-message-bg);
+  border-radius: var(--border-radius);
+  border: 1px solid var(--color-border);
+}
+
+/* Tool call cards — distinct visual treatment */
+.tool-call, .process-group {
+  background: var(--color-panel);
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius-sm);
+  border-left: 3px solid var(--color-accent);
+  font-size: 0.85rem;
+}
+
+/* ─── Input Area ────────────────────────────────────────────────────────── */
+#message-input, .message-input, textarea[name="message"] {
+  font-family: var(--font-family-main);
+  font-size: 0.95rem;
+  border-radius: 0.875rem;
+  border: 1.5px solid var(--color-border);
+  background: var(--color-input);
+  transition: border-color var(--transition-speed), box-shadow var(--transition-speed);
+  padding: 0.75rem 1rem;
+}
+
+#message-input:focus, textarea[name="message"]:focus {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 15%, transparent);
+  outline: none;
+}
+
+/* ─── Buttons ───────────────────────────────────────────────────────────── */
+.btn-primary, button[type="submit"], .send-button {
+  background: var(--color-accent);
+  color: white;
+  border-radius: 0.625rem;
+  border: none;
+  font-family: var(--font-family-main);
+  font-weight: 500;
+  font-size: 0.875rem;
+  padding: 0.5rem 1rem;
+  transition: opacity var(--transition-speed), transform var(--transition-speed);
+  cursor: pointer;
+}
+
+.btn-primary:hover, button[type="submit"]:hover, .send-button:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+/* New chat button — pill style */
+.new-chat-btn, [data-action="new-chat"] {
+  border-radius: 999px;
+  background: var(--color-accent);
+  color: white;
+  font-weight: 500;
+  padding: 0.5rem 1.25rem;
+}
+
+/* ─── Scrollbar ─────────────────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-primary);
+}
+
+/* ─── Code Blocks ───────────────────────────────────────────────────────── */
+pre, code {
+  font-family: var(--font-family-code);
+  font-size: 0.82rem;
+  border-radius: var(--border-radius-sm);
+}
+
+pre {
+  padding: 1rem;
+  background: color-mix(in srgb, var(--color-panel) 80%, var(--color-background));
+  border: 1px solid var(--color-border);
+  overflow-x: auto;
+}
+
+/* ─── NCore Badge — Bottom of Sidebar ──────────────────────────────────────*/
+#sidebar::after, .sidebar::after {
+  content: "NCore v2 · Agent Zero";
+  display: block;
+  position: absolute;
+  bottom: 0.75rem;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 0.65rem;
+  color: var(--color-text-muted);
+  opacity: 0.5;
+  font-family: var(--font-family-code);
+  pointer-events: none;
+}
+
+/* ─── Status Indicators ─────────────────────────────────────────────────── */
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.status-dot.online { background: #22c55e; box-shadow: 0 0 6px #22c55e80; }
+.status-dot.busy   { background: #f59e0b; box-shadow: 0 0 6px #f59e0b80; }
+.status-dot.error  { background: #ef4444; box-shadow: 0 0 6px #ef444480; }
+
+/* ─── Animations ────────────────────────────────────────────────────────── */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.message-user, .message-ai, .message-agent {
+  animation: fadeInUp 0.2s ease;
+}
