@@ -222,8 +222,21 @@ import re
 path = Path("/a0/api/api_message.py")
 src = path.read_text()
 
-src = re.sub(r"\n# NCORE_FAST_LOCAL_BEGIN\n.*?\n# NCORE_FAST_LOCAL_END\n", "\n", src, flags=re.S)
-src = re.sub(r"\n[ \t]*# NCORE_FAST_LOCAL_CALL\n(?:[ \t].*\n){1,6}", "\n", src)
+# Cleanup accepts indented markers because the patches live inside ApiMessage.
+src = re.sub(
+    r"^[ \t]*# NCORE_FAST_LOCAL_BEGIN\n.*?^[ \t]*# NCORE_FAST_LOCAL_END\n(?:^[ \t]*\n)?",
+    "",
+    src,
+    flags=re.M | re.S,
+)
+src = re.sub(
+    r"(?:^[ \t]*\n)?^[ \t]*# NCORE_FAST_LOCAL_CALL\n"
+    r"^[ \t]*if input\.get\(\"full_agent\"\) is not True and input\.get\(\"fast_local\", True\) is not False and not attachments:\n"
+    r"^[ \t]*return await self\._fast_local_response\(message, context_id\)\n(?:^[ \t]*\n)?",
+    "",
+    src,
+    flags=re.M,
+)
 
 required_imports = ["import asyncio", "import json", "import os", "import re", "import urllib.request", "import urllib.error"]
 lines = src.splitlines(True)
