@@ -25,7 +25,7 @@ class AgentZeroBridge:
     async def is_available(self) -> bool:
         """Check if Agent Zero is running and responding."""
         try:
-            r = await self.client.get("/", timeout=3)
+            r = await self.client.get("/api/health", timeout=3)
             self._available = r.status_code == 200
             return self._available
         except Exception:
@@ -59,13 +59,12 @@ class AgentZeroBridge:
         log.info("agent_zero.execute", task=task[:100])
 
         try:
-            # Agent Zero API: POST /message with task text
-            payload = {
-                "message": task,
-                "context_id": context or "default",
-            }
+            # Agent Zero v1.9 external API endpoint
+            payload = {"message": task}
+            if context:
+                payload["context_id"] = context
 
-            r = await self.client.post("/api_message", json=payload, timeout=timeout,
+            r = await self.client.post("/api/api_message", json=payload, timeout=timeout,
                                         headers={"X-API-KEY": self.api_key, "Content-Type": "application/json"})
             r.raise_for_status()
             data = r.json()
