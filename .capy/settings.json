@@ -1,0 +1,11 @@
+{
+  "$schema": "https://capy.ai/settings.schema.json",
+  "hooks": {
+    "setup": ["python3 -m py_compile core/*.py sovereign/*.py sovereign/supervisor/*.py 2>/dev/null || true"],
+    "previews": [
+      { "name": "Mission Control", "port": 3004 },
+      { "name": "Agent Zero", "port": 8090 },
+      { "name": "NCore Dashboard", "port": 3002 }
+    ]
+  }
+}
