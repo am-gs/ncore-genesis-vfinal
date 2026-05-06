@@ -287,10 +287,12 @@ helper = r'''    # NCORE_FAST_LOCAL_BEGIN
     @staticmethod
     def _fast_local_chat_sync(message, context_id=None):
         model = os.environ.get("A0_FAST_LOCAL_MODEL", "qwen3-8b:latest")
+        exact_mode = "reply exactly" in str(message).lower() or "return exactly" in str(message).lower()
+        num_predict = 96 if exact_mode and len(str(message)) < 500 else 900
         messages = [
             {
                 "role": "system",
-                "content": "You are an exact-response completion engine. If the user asks to reply exactly with a token/string, output only that token/string. Do not return JSON unless the user explicitly asks for JSON. Never summarize exact-output tasks as completed; perform them by returning the requested text.",
+                "content": "You are an exact-response completion engine. If the user asks to reply exactly with a token/string, output only that token/string. Otherwise complete the requested task fully with concise, structured output. Do not refuse benign safety, security-awareness, or defensive tabletop tasks. For mock phishing/security-awareness content, never include live-looking URLs, credential-capture URLs, password reset parameters, real credentials, exploit code, or evasion steps; use obvious placeholders such as [SAFE-LINK-PLACEHOLDER], [EMPLOYEE_NAME], and example.invalid. Do not return JSON unless the user explicitly asks for JSON. Never summarize exact-output tasks as completed; perform them by returning the requested text.",
             },
             {"role": "user", "content": str(message)},
         ]
@@ -298,11 +300,7 @@ helper = r'''    # NCORE_FAST_LOCAL_BEGIN
             "model": model,
             "messages": messages,
             "stream": False,
-            "options": {
-                "num_ctx": 2048,
-                "num_predict": 192,
-                "temperature": 0.1,
-            },
+            "options": {"num_predict": num_predict, "num_ctx": 4096, "temperature": 0.1},
         }).encode("utf-8")
         request = urllib.request.Request(
             "http://host.docker.internal:11434/api/chat",
