@@ -286,11 +286,14 @@ helper = r'''    # NCORE_FAST_LOCAL_BEGIN
 
     @staticmethod
     def _fast_local_chat_sync(message, context_id=None):
-        model = os.environ.get("A0_FAST_LOCAL_MODEL", "ncore-fast-uncensored:latest")
-        messages = []
-        if context_id:
-            messages.append({"role": "system", "content": f"Agent Zero context_id: {context_id}"})
-        messages.append({"role": "user", "content": "/no_think\n" + str(message)})
+        model = os.environ.get("A0_FAST_LOCAL_MODEL", "qwen3-8b:latest")
+        messages = [
+            {
+                "role": "system",
+                "content": "You are an exact-response completion engine. If the user asks to reply exactly with a token/string, output only that token/string. Do not return JSON unless the user explicitly asks for JSON. Never summarize exact-output tasks as completed; perform them by returning the requested text.",
+            },
+            {"role": "user", "content": str(message)},
+        ]
         body = json.dumps({
             "model": model,
             "messages": messages,
