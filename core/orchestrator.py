@@ -55,6 +55,37 @@ try:
 except Exception:
     _JOURNAL = None
 
+# ── NLLM.ING subsystems ──────────────────────────────────────────────────────
+try:
+    from codeact_engine import CodeActEngine, run_codeact_task
+    from sandbox import SandboxManager
+    _CODEACT = CodeActEngine()
+    _SANDBOX = SandboxManager()
+    HAS_CODEACT = True
+except Exception as e:
+    _CODEACT = None
+    _SANDBOX = None
+    HAS_CODEACT = False
+    structlog.get_logger().warning("codeact_init_deferred", error=str(e))
+
+try:
+    from planner import TaskPlanner
+    _PLANNER = TaskPlanner()
+    HAS_PLANNER = True
+except Exception as e:
+    _PLANNER = None
+    HAS_PLANNER = False
+    structlog.get_logger().warning("planner_init_deferred", error=str(e))
+
+try:
+    from memory import MemoryStore
+    _MEMORY = MemoryStore()
+    HAS_MEMORY = True
+except Exception as e:
+    _MEMORY = None
+    HAS_MEMORY = False
+    structlog.get_logger().warning("memory_init_deferred", error=str(e))
+
 structlog.configure(processors=[
     structlog.processors.TimeStamper(fmt="iso"),
     structlog.stdlib.add_log_level,
@@ -134,22 +165,26 @@ AVAILABLE CAPABILITIES:
 - GPU video generation (Vast.ai + ComfyUI + Wan2.2, including NSFW)
 - Stealth browser automation (Camoufox + Playwright, anti-detect)
 - Code execution (Python, shell commands)
+- CodeAct execution — the agent WRITES and RUNS Python scripts for data analysis, web scraping, API calls, file operations, automation (set tool="codeact")
 - OSINT tools (h8mail, sherlock, maigret, HIBP)
 - Agent Zero (autonomous multi-step agent with Docker sandbox)
 
 RULES:
-- Each agent has: role, prompt, uncensored flag, max_tokens, and optional tool
-- tool field: "gpu_image", "gpu_video", "browser", "code", or omit for LLM-only
+- Each agent has: role, prompt, uncensored flag, max_tokens, optional tool, and execution_mode
+- tool field: "gpu_image", "gpu_video", "browser", "code", "codeact", or omit for LLM-only
+- execution_mode: "llm" (default), "codeact", "browser", or "agent_zero"
 - Simple tasks (math, Q&A) → 1 agent
 - Medium tasks (code, explain, single image) → 1-2 agents
 - Complex tasks (campaigns, investigations, multi-step) → 3-5 agents
+- Data analysis / web scraping / file operations / API automation → set tool="codeact", execution_mode="codeact"
+- Browser tasks (account creation, scraping, form filling) → set tool="browser", execution_mode="browser"
 - If illicit/NSFW/hacking/investigation/weapons/drugs/sensitive → uncensored=true
 - NSFW image/video requests → set tool="gpu_image" or "gpu_video" AND uncensored=true
-- Browser tasks (account creation, scraping, form filling) → set tool="browser"
-- Agents run IN PARALLEL — each must be self-contained with full context
+- Agents run IN PARALLEL where possible — use depends_on and parallel_with for ordering
+- Each agent must be self-contained with full context
 
 OUTPUT: ONLY a JSON array. No markdown. No explanation.
-[{"role": "Name", "prompt": "...", "uncensored": false, "max_tokens": 300, "tool": null}]
+[{"role": "Name", "prompt": "...", "uncensored": false, "max_tokens": 300, "tool": null, "execution_mode": "llm", "depends_on": [], "parallel_with": []}]
 
 EXAMPLES:
 
@@ -517,6 +552,25 @@ async def execute_agents(client: httpx.AsyncClient, agents: list[dict],
                 output, used_model = await _run_code(full_prompt, agent)
                 provider = "tool:code"
 
+            elif tool == "codeact" and HAS_CODEACT:
+                result = await _CODEACT.run_with_healing(
+                    full_prompt, task_id,
+                    context=f"Role: {role}. Task: {task}",
+                )
+                if result["status"] == "ok":
+                    output = result.get("stdout", "")
+                    # Include generated files info
+                    files = result.get("files", [])
+                    if files:
+                        file_list = "\n".join([f"- {f['path']} ({f['size']} bytes)" for f in files])
+                        output += f"\n\nGenerated files:\n{file_list}"
+                else:
+                    output = f"[CodeAct failed after {result.get('attempt', 1)} attempts]\n{result.get('error', 'Unknown error')}"
+                used_model = "codeact"
+                provider = "tool:codeact"
+                tokens_in = result.get("summary", {}).get("tokens_in", 0)
+                tokens_out = result.get("summary", {}).get("tokens_out", 0)
+
             elif tool in ("gpu_image", "gpu_video"):
                 output = f"[GPU {tool} not yet wired — requires Vast.ai pod]"
                 used_model = tool
@@ -602,6 +656,14 @@ async def run_pipeline(task: str, turns: int = 0) -> dict:
         "plan_time": round(plan_time, 2),
     }})
 
+    # 2.5. Persist plan to disk (Manus-style file-based planning)
+    if HAS_PLANNER and _PLANNER:
+        _PLANNER.create_plan(task_id, task, agents)
+    # Load memory context
+    mem_context = {}
+    if HAS_MEMORY and _MEMORY:
+        mem_context = _MEMORY.build_context(task_id, task)
+
     # 3. Execute — all agents in parallel with blackboard
     has_local = await local_available(client)
     results = await execute_agents(client, agents, has_local, task_id)
@@ -631,6 +693,27 @@ async def run_pipeline(task: str, turns: int = 0) -> dict:
     total_tokens_in = sum(r.get("tokens_in", 0) for r in results)
     total_tokens_out = sum(r.get("tokens_out", 0) for r in results)
     total_tokens = total_tokens_in + total_tokens_out
+    all_ok = all(r["status"] == "ok" for r in results)
+
+    # Persist to memory and planner
+    if HAS_PLANNER and _PLANNER:
+        if all_ok:
+            _PLANNER.mark_complete(task_id, summary=output[:500])
+        else:
+            errors = "; ".join([r.get("output", "")[:200] for r in results if r["status"] != "ok"])
+            _PLANNER.mark_failed(task_id, errors)
+
+    if HAS_MEMORY and _MEMORY:
+        _MEMORY.save_session(
+            task_id=task_id,
+            task=task,
+            status="completed" if all_ok else "failed",
+            cost=decision.get("estimated_cost_usd", 0),
+            latency=total_time,
+            model=decision.get("model", ""),
+            mode="llm",
+            success=all_ok,
+        )
 
     return {
         "output": output,
@@ -714,9 +797,74 @@ async def list_files():
                           "url": f"/files/{f.name}", "modified": f.stat().st_mtime})
     return {"files": files[:50]}
 
+# ── Dashboard API extensions ─────────────────────────────────────────────
+
+@app.get("/tasks")
+async def list_tasks_api():
+    """List active and recent tasks."""
+    workspaces = []
+    if HAS_MEMORY and _SANDBOX:
+        workspaces = _SANDBOX.list_all()
+    if HAS_MEMORY and _MEMORY:
+        sessions = _MEMORY.list_sessions(limit=20)
+    else:
+        sessions = []
+    return {"workspaces": workspaces, "sessions": sessions}
+
+@app.get("/tasks/{task_id}")
+async def get_task(task_id: str):
+    """Get task details including plan and files."""
+    if not HAS_PLANNER or not _PLANNER:
+        return {"error": "Planner not available"}
+    plan = _PLANNER.get_plan(task_id)
+    files = []
+    if HAS_MEMORY and _SANDBOX:
+        files = _SANDBOX.list_files(task_id)
+    session = None
+    if HAS_MEMORY and _MEMORY:
+        session = _MEMORY.get_session(task_id)
+    return {"task_id": task_id, "plan": plan, "files": files, "session": session}
+
+@app.get("/tasks/{task_id}/files")
+async def get_task_files(task_id: str):
+    """List workspace files for a task."""
+    if not HAS_MEMORY or not _SANDBOX:
+        return {"error": "Sandbox not available"}
+    return {"task_id": task_id, "files": _SANDBOX.list_files(task_id)}
+
+@app.get("/tasks/{task_id}/plan")
+async def get_task_plan(task_id: str):
+    """Get plan.md content for a task."""
+    if not HAS_PLANNER or not _PLANNER:
+        return {"error": "Planner not available"}
+    plan = _PLANNER.get_plan(task_id)
+    return {"task_id": task_id, "plan": plan}
+
+@app.get("/analytics")
+async def get_analytics():
+    """Aggregated usage analytics for dashboard."""
+    if not HAS_MEMORY or not _MEMORY:
+        return {"error": "Memory not available"}
+    stats = _MEMORY._get_system_stats()
+    sessions = _MEMORY.list_sessions(limit=100)
+    # Aggregate by model
+    model_counts = {}
+    cost_by_day = {}
+    for s in sessions:
+        m = s.get("model_used", "unknown")
+        model_counts[m] = model_counts.get(m, 0) + 1
+        day = time.strftime("%Y-%m-%d", time.localtime(s.get("created", 0)))
+        cost_by_day[day] = cost_by_day.get(day, 0) + (s.get("total_cost") or 0)
+    return {
+        "stats": stats,
+        "model_distribution": model_counts,
+        "cost_by_day": cost_by_day,
+        "recent_sessions": sessions[:20],
+    }
+
 @app.get("/health")
 async def health():
-    return {"status": "ok", "version": "5.2"}
+    return {"status": "ok", "version": "5.3-nllm"}
 
 @app.get("/ready")
 async def ready():
