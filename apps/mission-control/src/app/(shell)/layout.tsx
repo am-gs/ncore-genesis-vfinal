@@ -1,6 +1,7 @@
 import Sidebar from '@/components/shell/Sidebar';
 import TopBar from '@/components/shell/TopBar';
 import CommandPalette from '@/components/shell/CommandPalette';
+import { PageTransition } from '@/components/shell/PageTransition';
 
 export default function ShellLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -8,7 +9,9 @@ export default function ShellLayout({ children }: { children: React.ReactNode })
       <Sidebar />
       <div className="flex flex-1 flex-col overflow-hidden">
         <TopBar />
-        <main className="flex-1 overflow-y-auto p-6">{children}</main>
+        <main className="flex-1 overflow-y-auto p-6">
+          <PageTransition>{children}</PageTransition>
+        </main>
       </div>
       <CommandPalette />
     </div>

@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/Badge';
 import { fetchRuns } from '@/lib/api';
 import type { Run } from '@/types';
 import { Shield, TrendingUp, Clock, AlertTriangle, ArrowRight } from 'lucide-react';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from 'recharts';
 
 export default function BifrostPage() {
   const [runs, setRuns] = useState<Run[]>([]);
@@ -28,8 +29,23 @@ export default function BifrostPage() {
   const hourly = useMemo(() => {
     const buckets: Record<string, number> = {};
     runs.forEach(r => { const h = new Date(r.ts * 1000).toISOString().slice(0, 13) + ':00'; buckets[h] = (buckets[h] || 0) + 1; });
-    return Object.entries(buckets).slice(-24).sort((a, b) => a[0].localeCompare(b[0]));
+    return Object.entries(buckets).slice(-24).sort((a, b) => a[0].localeCompare(b[0])).map(([time, count]) => ({ time: time.replace('T', ' '), count }));
   }, [runs]);
+
+  const providerData = useMemo(() => [
+    { name: 'Remote', value: stats.remote, fill: '#8b5cf6' },
+    { name: 'Local', value: stats.local, fill: '#22c55e' },
+    { name: 'Policy', value: stats.policy, fill: '#ef4444' },
+  ], [stats]);
+
+  const chartTooltipStyle = {
+    backgroundColor: 'rgba(15, 23, 42, 0.95)',
+    border: '1px solid rgba(255,255,255,0.06)',
+    borderRadius: '12px',
+    backdropFilter: 'blur(12px)',
+    color: '#e5e7eb',
+    fontSize: '12px',
+  };
 
   return (
     <div className="space-y-6 animate-slide-up">
@@ -87,22 +103,20 @@ export default function BifrostPage() {
         <Card glow>
           <CardHeader><CardTitle>Provider Distribution</CardTitle></CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {[
-                { label: 'Remote (paid)', value: stats.remote, color: 'bg-violet-500', textColor: 'text-violet-400' },
-                { label: 'Sovereign Local', value: stats.local, color: 'bg-emerald-500', textColor: 'text-emerald-400' },
-                { label: 'Policy Block', value: stats.policy, color: 'bg-rose-500', textColor: 'text-rose-400' },
-              ].map(item => (
-                <div key={item.label}>
-                  <div className="flex justify-between text-xs mb-1.5">
-                    <span className="text-muted">{item.label}</span>
-                    <span className={`font-mono font-medium ${item.textColor}`}>{item.value}</span>
-                  </div>
-                  <div className="h-2.5 rounded-full bg-white/[0.04] overflow-hidden">
-                    <div className={`h-full rounded-full ${item.color} transition-all duration-500`} style={{ width: stats.total > 0 ? `${(item.value / stats.total) * 100}%` : '0%' }} />
-                  </div>
-                </div>
-              ))}
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={providerData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+                  <XAxis dataKey="name" stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
+                  <YAxis stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
+                  <Tooltip contentStyle={chartTooltipStyle} />
+                  <Bar dataKey="value" radius={[6, 6, 0, 0]}>
+                    {providerData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.fill} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
             </div>
           </CardContent>
         </Card>
@@ -110,15 +124,22 @@ export default function BifrostPage() {
         <Card glow>
           <CardHeader><CardTitle>Hourly Activity</CardTitle></CardHeader>
           <CardContent>
-            <div className="space-y-2 max-h-64 overflow-y-auto">
-              {hourly.length === 0 && <div className="text-sm text-muted py-4">No data yet</div>}
-              {hourly.map(([time, count]) => (
-                <div key={time} className="flex items-center gap-3 text-xs">
-                  <span className="w-32 shrink-0 font-mono text-muted">{time.replace('T', ' ')}</span>
-                  <div className="h-3 rounded-full bg-gradient-to-r from-violet-500 to-cyan-500 flex-1" style={{ maxWidth: `${Math.min(count * 10, 200)}px` }} />
-                  <span className="text-text w-8 text-right font-mono">{count}</span>
-                </div>
-              ))}
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={hourly} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
+                  <defs>
+                    <linearGradient id="areaColor" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+                  <XAxis dataKey="time" stroke="#94a3b8" fontSize={11} tickLine={false} axisLine={false} angle={-30} textAnchor="end" height={50} />
+                  <YAxis stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
+                  <Tooltip contentStyle={chartTooltipStyle} />
+                  <Area type="monotone" dataKey="count" stroke="#8b5cf6" strokeWidth={2} fill="url(#areaColor)" />
+                </AreaChart>
+              </ResponsiveContainer>
             </div>
           </CardContent>
         </Card>

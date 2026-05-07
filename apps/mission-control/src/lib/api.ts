@@ -1,12 +1,14 @@
+import type { HealthResponse, RunsResponse, RestartResponse, Task, PlanStep, Artifact } from '@/types';
+
 const BASE = typeof window !== 'undefined' ? (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:3004') : '';
 
-export async function fetchHealth(): Promise<import('../types').HealthResponse> {
+export async function fetchHealth(): Promise<HealthResponse> {
   const r = await fetch(`${BASE}/api/health`, { cache: 'no-store' });
   if (!r.ok) throw new Error(`Health ${r.status}`);
   return r.json();
 }
 
-export async function fetchRuns(limit = 50): Promise<import('../types').RunsResponse> {
+export async function fetchRuns(limit = 50): Promise<RunsResponse> {
   const r = await fetch(`${BASE}/api/runs?limit=${limit}`, { cache: 'no-store' });
   if (!r.ok) throw new Error(`Runs ${r.status}`);
   return r.json();
@@ -18,7 +20,7 @@ export async function fetchLogs(name: string): Promise<string> {
   return r.text();
 }
 
-export async function restartService(name: string): Promise<import('../types').RestartResponse> {
+export async function restartService(name: string): Promise<RestartResponse> {
   const r = await fetch(`${BASE}/api/restart/${name}`, { method: 'POST', cache: 'no-store' });
   if (!r.ok) throw new Error(`Restart ${r.status}`);
   return r.json();
@@ -31,5 +33,68 @@ export async function chatDeerFlow(messages: { role: string; content: string }[]
     body: JSON.stringify({ messages, thread_id: threadId }),
   });
   if (!r.ok) throw new Error(`Chat ${r.status}`);
+  return r.json();
+}
+
+/* ── Task Execution API (cognitive infrastructure) ── */
+
+export async function fetchTasks(status?: string, limit = 50): Promise<{ tasks: Task[] }> {
+  const qs = status ? `?status=${status}&limit=${limit}` : `?limit=${limit}`;
+  const r = await fetch(`${BASE}/api/tasks${qs}`, { cache: 'no-store' });
+  if (!r.ok) throw new Error(`Tasks ${r.status}`);
+  return r.json();
+}
+
+export async function createTask(body: { name: string; description: string; agent: string; plan_steps?: { description: string }[] }): Promise<Task> {
+  const r = await fetch(`${BASE}/api/tasks`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), cache: 'no-store' });
+  if (!r.ok) throw new Error(`Create ${r.status}`);
+  return r.json();
+}
+
+export async function fetchTask(id: string): Promise<Task> {
+  const r = await fetch(`${BASE}/api/tasks/${id}`, { cache: 'no-store' });
+  if (!r.ok) throw new Error(`Task ${r.status}`);
+  return r.json();
+}
+
+export async function fetchTaskTree(id: string): Promise<{ tree: Task }> {
+  const r = await fetch(`${BASE}/api/tasks/${id}/tree`, { cache: 'no-store' });
+  if (!r.ok) throw new Error(`Tree ${r.status}`);
+  return r.json();
+}
+
+export async function spawnSubtask(id: string, body: { name: string; description: string; agent: string }): Promise<Task> {
+  const r = await fetch(`${BASE}/api/tasks/${id}/spawn`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), cache: 'no-store' });
+  if (!r.ok) throw new Error(`Spawn ${r.status}`);
+  return r.json();
+}
+
+export async function branchTask(id: string, body: { name: string; description: string; from_step_id?: string }): Promise<Task> {
+  const r = await fetch(`${BASE}/api/tasks/${id}/branch`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), cache: 'no-store' });
+  if (!r.ok) throw new Error(`Branch ${r.status}`);
+  return r.json();
+}
+
+export async function pauseTask(id: string): Promise<Task> {
+  const r = await fetch(`${BASE}/api/tasks/${id}/pause`, { method: 'POST', cache: 'no-store' });
+  if (!r.ok) throw new Error(`Pause ${r.status}`);
+  return r.json();
+}
+
+export async function resumeTask(id: string): Promise<Task> {
+  const r = await fetch(`${BASE}/api/tasks/${id}/resume`, { method: 'POST', cache: 'no-store' });
+  if (!r.ok) throw new Error(`Resume ${r.status}`);
+  return r.json();
+}
+
+export async function retryTask(id: string): Promise<Task> {
+  const r = await fetch(`${BASE}/api/tasks/${id}/retry`, { method: 'POST', cache: 'no-store' });
+  if (!r.ok) throw new Error(`Retry ${r.status}`);
+  return r.json();
+}
+
+export async function cancelTask(id: string): Promise<Task> {
+  const r = await fetch(`${BASE}/api/tasks/${id}/cancel`, { method: 'POST', cache: 'no-store' });
+  if (!r.ok) throw new Error(`Cancel ${r.status}`);
   return r.json();
 }

@@ -134,3 +134,45 @@ body {
   --vscode-editor-background: #0a0f1c !important;
   --vscode-editorGutter-background: #0a0f1c !important;
 }
+
+/* CopilotKit dark theme overrides */
+.copilotKitPopup {
+  --copilot-kit-primary-color: #8b5cf6;
+  --copilot-kit-background-color: rgba(15, 23, 42, 0.9);
+  --copilot-kit-secondary-color: rgba(30, 41, 59, 0.8);
+}
+.copilotKitPopup, .copilotKitSidebar {
+  background: rgba(15, 23, 42, 0.9) !important;
+  backdrop-filter: blur(20px) saturate(1.4) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(1.4) !important;
+  border: 1px solid rgba(255,255,255,0.06) !important;
+  color: #e5e7eb !important;
+}
+.copilotKitHeader {
+  background: rgba(10, 15, 28, 0.8) !important;
+  border-bottom: 1px solid rgba(255,255,255,0.06) !important;
+}
+.copilotKitMessages {
+  background: transparent !important;
+}
+.copilotKitMessage {
+  color: #e5e7eb !important;
+}
+.copilotKitMessageUser {
+  background: linear-gradient(135deg, #8b5cf6, #6366f1) !important;
+}
+.copilotKitMessageAssistant {
+  background: rgba(255,255,255,0.04) !important;
+  border: 1px solid rgba(255,255,255,0.06) !important;
+}
+.copilotKitInput {
+  background: rgba(10, 15, 28, 0.6) !important;
+  border: 1px solid rgba(255,255,255,0.06) !important;
+  color: #e5e7eb !important;
+}
+.copilotKitButton {
+  background: linear-gradient(135deg, #8b5cf6, #6366f1) !important;
+}
+.copilotKitButton:hover {
+  box-shadow: 0 0 20px rgba(139, 92, 246, 0.3) !important;
+}
