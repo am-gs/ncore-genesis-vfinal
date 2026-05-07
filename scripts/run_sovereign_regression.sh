@@ -16,7 +16,20 @@ PY
 record "$name" "${PIPESTATUS[0]}"
 }
 
+sync_agent_zero_token() {
+  if command -v docker >/dev/null 2>&1 && docker ps --format '{{.Names}}' | grep -Fxq agent-zero; then
+    local token
+    token="$(docker exec -w /a0 agent-zero /opt/venv-a0/bin/python -c 'from helpers.settings import create_auth_token; print(create_auth_token())' 2>/dev/null || true)"
+    if [[ -n "$token" ]]; then
+      install -m 600 /dev/null /home/ubuntu/.agent-zero-api-token
+      printf '%s' "$token" >/home/ubuntu/.agent-zero-api-token
+      chown ubuntu:ubuntu /home/ubuntu/.agent-zero-api-token 2>/dev/null || true
+    fi
+  fi
+}
+
 log "Sovereign regression $(date -u +%FT%TZ)"
+sync_agent_zero_token
 
 py 'A exact-output fast path' '
 import json, time, urllib.request

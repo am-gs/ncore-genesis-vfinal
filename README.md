@@ -43,6 +43,32 @@ scripts/run_sovereign_regression.sh
 
 Reports are written under `/home/ubuntu/sovereign/logs/`.
 
+### Operator control plane
+
+Use `scripts/ncore_operator.sh` as the standard SOTA operator entrypoint for live work instead of hand-written SSH curls:
+
+```bash
+scripts/ncore_operator.sh doctor
+scripts/ncore_operator.sh health
+scripts/ncore_operator.sh urls
+scripts/ncore_operator.sh regress
+scripts/ncore_operator.sh apply
+```
+
+Override `NCORE_SSH_HOST`, `NCORE_SSH_KEY`, or `NCORE_REMOTE_REPO` when running outside the default Capy VM. The script centralizes live diagnostics, tailnet URLs, regression, apply, logs, and exposure checks without storing secrets.
+
+### Tailscale dashboard access
+
+Use `scripts/configure_tailscale_access.sh` on the VM to join Tailscale and expose only the dashboard/API front doors on the Tailscale IP. The script does not store auth keys in the repo. For OAuth auth keys, provide the allowed tag explicitly:
+
+```bash
+TAILSCALE_AUTHKEY=tskey-client-... \
+TAILSCALE_ADVERTISE_TAGS=tag:ncore \
+scripts/configure_tailscale_access.sh
+```
+
+It proxies Mission Control `3004`, Agent Zero `8090`, legacy dashboard `3002`, Grafana `3001`, Bifrost `8000`, DeerFlow `2026`, and Mem0 `8300` from localhost to the tailnet IP only. Databases remain localhost-bound. If a managed port is already wildcard-bound on `0.0.0.0`, `*`, or `[::]`, the proxy service fails closed instead of treating the public bind as acceptable.
+
 Known limitations:
 
 - The live VM is Ubuntu 22.04 arm64, not Oracle Linux.

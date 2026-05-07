@@ -385,6 +385,14 @@ else
   log "agent-zero container does not exist; skipping container patch and restart"
 fi
 
+if (( agent_zero_exists )); then
+  log "syncing Agent Zero API token file"
+  token="$(docker exec -w /a0 agent-zero /opt/venv-a0/bin/python -c 'from helpers.settings import create_auth_token; print(create_auth_token())')"
+  install -m 600 /dev/null /home/ubuntu/.agent-zero-api-token
+  printf '%s' "$token" >/home/ubuntu/.agent-zero-api-token
+  chown ubuntu:ubuntu /home/ubuntu/.agent-zero-api-token 2>/dev/null || true
+fi
+
 if [[ -f /home/ubuntu/.agent-zero-api-token ]]; then
   log "running fast-local smoke test"
   python3 <<'PY'
