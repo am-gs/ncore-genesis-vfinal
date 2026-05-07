@@ -351,7 +351,11 @@ export default function TaskDetailClient() {
   );
 }
 
-function renderTree(t: Task, depth: number): React.ReactNode {
+interface TreeNode extends Task {
+  children?: TreeNode[];
+}
+
+function renderTree(t: TreeNode, depth: number): React.ReactNode {
   return (
     <div key={t.id} className="space-y-1">
       <div className="flex items-center gap-2 text-xs" style={{ paddingLeft: depth * 20 }}>
@@ -361,6 +365,11 @@ function renderTree(t: Task, depth: number): React.ReactNode {
         <Badge color={t.status === 'completed' ? 'ok' : t.status === 'running' ? 'cyan' : t.status === 'failed' ? 'bad' : 'muted'} className="text-[10px]">{t.status}</Badge>
         <span className="text-muted/60 font-mono">{t.progress}%</span>
       </div>
+      {t.children && t.children.length > 0 && (
+        <div className="mt-1">
+          {t.children.map(child => renderTree(child, depth + 1))}
+        </div>
+      )}
     </div>
   );
 }

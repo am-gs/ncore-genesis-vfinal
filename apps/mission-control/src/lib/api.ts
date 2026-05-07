@@ -26,8 +26,10 @@ export async function restartService(name: string): Promise<RestartResponse> {
   return r.json();
 }
 
+const DEERFLOW_BASE = typeof window !== 'undefined' ? (process.env.NEXT_PUBLIC_DEERFLOW_URL || 'http://127.0.0.1:2026') : '';
+
 export async function chatDeerFlow(messages: { role: string; content: string }[], threadId = 'dashboard'): Promise<{ content: string }> {
-  const r = await fetch('http://127.0.0.1:2026/api/chat', {
+  const r = await fetch(`${DEERFLOW_BASE}/api/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ messages, thread_id: threadId }),

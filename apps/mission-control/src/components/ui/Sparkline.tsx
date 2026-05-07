@@ -3,7 +3,7 @@ export function Sparkline({ data, color = '#8b5cf6', height = 40 }: { data: numb
   const max = Math.max(...data, 1);
   const w = 200;
   const h = height;
-  const points = data.map((v, i) => `${(i / (data.length - 1)) * w},${h - (v / max) * h * 0.85 - 2}`).join(' ');
+  const points = data.map((v, i) => `${(i / Math.max(data.length - 1, 1)) * w},${h - (v / max) * h * 0.85 - 2}`).join(' ');
   return (
     <svg viewBox={`0 0 ${w} ${h}`} className="w-full" style={{ height }}>
       <defs>

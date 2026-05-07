@@ -33,7 +33,12 @@ TASKS_FILE = ROOT / 'tasks.json'
 app = FastAPI(title='Sovereign Mission Control')
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=['*'],
+    allow_origins=[
+        'http://localhost:3000',
+        'http://127.0.0.1:3000',
+        'http://localhost:3002',
+        'http://127.0.0.1:3002',
+    ],
     allow_credentials=True,
     allow_methods=['*'],
     allow_headers=['*'],
@@ -567,7 +572,7 @@ async def cancel_task(task_id: str):
 async def get_tree(task_id: str):
     async with _lock:
         task = _resolve_task(task_id)
-        return _build_tree(task)
+        return {"tree": _build_tree(task)}
 
 
 @app.get("/api/tasks/{task_id}/trajectory")
