@@ -222,8 +222,21 @@ import re
 path = Path("/a0/api/api_message.py")
 src = path.read_text()
 
-src = re.sub(r"\n# NCORE_FAST_LOCAL_BEGIN\n.*?\n# NCORE_FAST_LOCAL_END\n", "\n", src, flags=re.S)
-src = re.sub(r"\n[ \t]*# NCORE_FAST_LOCAL_CALL\n(?:[ \t].*\n){1,6}", "\n", src)
+# Cleanup accepts indented markers because the patches live inside ApiMessage.
+src = re.sub(
+    r"^[ \t]*# NCORE_FAST_LOCAL_BEGIN\n.*?^[ \t]*# NCORE_FAST_LOCAL_END\n(?:^[ \t]*\n)?",
+    "",
+    src,
+    flags=re.M | re.S,
+)
+src = re.sub(
+    r"(?:^[ \t]*\n)?^[ \t]*# NCORE_FAST_LOCAL_CALL\n"
+    r"^[ \t]*if input\.get\(\"full_agent\"\) is not True and input\.get\(\"fast_local\", True\) is not False and not attachments:\n"
+    r"^[ \t]*return await self\._fast_local_response\(message, context_id\)\n(?:^[ \t]*\n)?",
+    "",
+    src,
+    flags=re.M,
+)
 
 required_imports = ["import asyncio", "import json", "import os", "import re", "import urllib.request", "import urllib.error"]
 lines = src.splitlines(True)
@@ -273,20 +286,21 @@ helper = r'''    # NCORE_FAST_LOCAL_BEGIN
 
     @staticmethod
     def _fast_local_chat_sync(message, context_id=None):
-        model = os.environ.get("A0_FAST_LOCAL_MODEL", "ncore-fast-uncensored:latest")
-        messages = []
-        if context_id:
-            messages.append({"role": "system", "content": f"Agent Zero context_id: {context_id}"})
-        messages.append({"role": "user", "content": "/no_think\n" + str(message)})
+        model = os.environ.get("A0_FAST_LOCAL_MODEL", "qwen3-8b:latest")
+        exact_mode = "reply exactly" in str(message).lower() or "return exactly" in str(message).lower()
+        num_predict = 96 if exact_mode and len(str(message)) < 500 else 900
+        messages = [
+            {
+                "role": "system",
+                "content": "You are an exact-response completion engine. If the user asks to reply exactly with a token/string, output only that token/string. Otherwise complete the requested task fully with concise, structured output. Do not refuse benign safety, security-awareness, or defensive tabletop tasks. For mock phishing/security-awareness content, never include live-looking URLs, credential-capture URLs, password reset parameters, real credentials, exploit code, or evasion steps; use obvious placeholders such as [SAFE-LINK-PLACEHOLDER], [EMPLOYEE_NAME], and example.invalid. Do not return JSON unless the user explicitly asks for JSON. Never summarize exact-output tasks as completed; perform them by returning the requested text.",
+            },
+            {"role": "user", "content": str(message)},
+        ]
         body = json.dumps({
             "model": model,
             "messages": messages,
             "stream": False,
-            "options": {
-                "num_ctx": 2048,
-                "num_predict": 192,
-                "temperature": 0.1,
-            },
+            "options": {"num_predict": num_predict, "num_ctx": 4096, "temperature": 0.1},
         }).encode("utf-8")
         request = urllib.request.Request(
             "http://host.docker.internal:11434/api/chat",
