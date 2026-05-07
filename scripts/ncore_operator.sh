@@ -37,6 +37,13 @@ rsync_live() {
   rsync -az --delete -e "ssh ${SSH_OPTS[*]}" "$@"
 }
 
+validate_remote_repo() {
+  if [[ ! "$NCORE_REMOTE_REPO" =~ ^/[A-Za-z0-9._/-]+$ ]]; then
+    echo "NCORE_REMOTE_REPO must be an absolute path containing only letters, numbers, dot, underscore, slash, or dash" >&2
+    return 2
+  fi
+}
+
 health() {
   ssh_live 'set -Eeuo pipefail
 for spec in \
@@ -79,7 +86,9 @@ printf "Mem0:            http://%s:8300/health\n" "$TSIP"'
 }
 
 ports() {
-  ssh_live 'set -Eeuo pipefail
+  ssh_live bash -s -- "$NCORE_PUBLIC_HOST" <<'REMOTE'
+set -Eeuo pipefail
+NCORE_PUBLIC_HOST="$1"
 TSIP=$(tailscale ip -4 2>/dev/null | head -n1 || true)
 echo "tailscale_ip=${TSIP:-none}"
 ss -tlnp | grep -E ":(3004|8090|3002|3001|8000|2026|8300|11434|5432|6380|8200|9090)" || true
@@ -88,7 +97,8 @@ echo "public_probe"
 for p in 3004 3001 8000 2026 8300; do
   code=$(curl -sS -m 3 -o /dev/null -w "%{http_code}" "http://$NCORE_PUBLIC_HOST:${p}/" || true)
   printf "%s %s\n" "$p" "$code"
-done'
+done
+REMOTE
 }
 
 logs() {
@@ -101,17 +111,35 @@ logs() {
 }
 
 regress() {
-  ssh_live "cd /home/ubuntu/sovereign && '$NCORE_REMOTE_REPO/scripts/run_sovereign_regression.sh'"
+  validate_remote_repo
+  ssh_live bash -s -- "$NCORE_REMOTE_REPO" <<'REMOTE'
+set -Eeuo pipefail
+repo="$1"
+cd /home/ubuntu/sovereign
+"$repo/scripts/run_sovereign_regression.sh"
+REMOTE
 }
 
 apply_stack() {
+  validate_remote_repo
   rsync_live sovereign scripts "$NCORE_SSH_HOST:$NCORE_REMOTE_REPO/"
-  ssh_live "cd '$NCORE_REMOTE_REPO' && ./scripts/apply_sovereign_stack.sh"
+  ssh_live bash -s -- "$NCORE_REMOTE_REPO" <<'REMOTE'
+set -Eeuo pipefail
+repo="$1"
+cd "$repo"
+./scripts/apply_sovereign_stack.sh
+REMOTE
 }
 
 tailnet() {
+  validate_remote_repo
   rsync_live scripts/configure_tailscale_access.sh "$NCORE_SSH_HOST:$NCORE_REMOTE_REPO/scripts/"
-  ssh_live "cd '$NCORE_REMOTE_REPO' && ./scripts/configure_tailscale_access.sh"
+  ssh_live bash -s -- "$NCORE_REMOTE_REPO" <<'REMOTE'
+set -Eeuo pipefail
+repo="$1"
+cd "$repo"
+./scripts/configure_tailscale_access.sh
+REMOTE
 }
 
 doctor() {
