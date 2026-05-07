@@ -20,20 +20,20 @@ export default function TopBar() {
   const openCmd = useAppStore((s) => s.setCommandOpen);
 
   return (
-    <header className="flex items-center justify-between h-14 px-6 border-b border-line bg-panel">
-      <h1 className="text-sm font-semibold text-text">{titles[pathname] || 'Mission Control'}</h1>
-      <div className="flex items-center gap-2">
+    <header className="flex items-center justify-between h-16 px-6 border-b border-white/[0.06] bg-[rgba(10,15,28,0.6)] backdrop-blur-2xl z-10">
+      <h1 className="text-sm font-semibold text-text tracking-tight">{titles[pathname] || 'Mission Control'}</h1>
+      <div className="flex items-center gap-3">
         <button
           onClick={() => openCmd(true)}
-          className="flex items-center gap-2 rounded-md border border-line bg-panel-2 px-3 py-1.5 text-xs text-muted hover:text-text transition-colors"
+          className="flex items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.03] backdrop-blur-md px-3 py-2 text-xs text-muted hover:text-text hover:bg-white/[0.06] hover:border-white/[0.12] transition-all"
         >
           <Search className="h-3.5 w-3.5" />
-          <span>Command</span>
-          <kbd className="ml-1 rounded bg-panel-3 px-1.5 py-0.5 text-[10px] font-mono">⌘K</kbd>
+          <span className="hidden sm:inline">Command</span>
+          <kbd className="hidden sm:inline-flex ml-1 rounded-md bg-white/[0.06] px-1.5 py-0.5 text-[10px] font-mono border border-white/[0.08]">⌘K</kbd>
         </button>
-        <button className="relative rounded-md p-2 text-muted hover:text-text hover:bg-panel-2 transition-colors">
+        <button className="relative rounded-xl p-2.5 text-muted hover:text-text hover:bg-white/[0.04] transition-all border border-transparent hover:border-white/[0.08]">
           <Bell className="h-4 w-4" />
-          <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-accent" />
+          <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-gradient-to-r from-violet-400 to-cyan-400 shadow-[0_0_8px_rgba(139,92,246,0.6)]" />
         </button>
       </div>
     </header>

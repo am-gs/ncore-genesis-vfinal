@@ -14,7 +14,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${inter.variable} ${jetbrains.variable} ${libre.variable} dark`}>
-      <body className="h-screen overflow-hidden bg-bg text-text font-sans">{children}</body>
+      <body className="h-screen overflow-hidden bg-bg text-text font-sans antialiased">
+        <div className="ambient-bg" />
+        {children}
+      </body>
     </html>
   );
 }

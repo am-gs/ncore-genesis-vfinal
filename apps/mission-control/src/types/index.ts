@@ -27,7 +27,3 @@ export interface RestartResponse {
   ok: boolean;
   output: string;
 }
-export interface ChatMessage {
-  role: 'user' | 'assistant' | 'system';
-  content: string;
-}

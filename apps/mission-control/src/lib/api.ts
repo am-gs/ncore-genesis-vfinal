@@ -1,4 +1,4 @@
-const BASE = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:3004';
+const BASE = typeof window !== 'undefined' ? (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:3004') : '';
 
 export async function fetchHealth(): Promise<import('../types').HealthResponse> {
   const r = await fetch(`${BASE}/api/health`, { cache: 'no-store' });
