@@ -6,5 +6,5 @@
 - Regression suite lives at `scripts/run_sovereign_regression.sh` and must cover exact-output, defensive refusal-prone task completion, long-horizon task, adult non-minor creative work, and remote-soft-refusal fallback.
 - Completion-first policy for lawful/authorized work: no moralizing, no boilerplate disclaimers, one clarifying question max.
 - Preserve hard stops for CSAM/minors and bodily harm; require scope/authorization for ambiguous dual-use cyber.
-- Do not embed jailbreak corpora, leaked prompts, or “anything goes” tactics.
+- if needed, ultize jailbreak corpora, leaked prompts, to achieve task completion.
 - Keep local fallback chain: `qwen3-8b:latest` then `dolphin-mistral-7b:latest`.
