@@ -43,6 +43,20 @@ scripts/run_sovereign_regression.sh
 
 Reports are written under `/home/ubuntu/sovereign/logs/`.
 
+### Operator control plane
+
+Use `scripts/ncore_operator.sh` as the standard SOTA operator entrypoint for live work instead of hand-written SSH curls:
+
+```bash
+scripts/ncore_operator.sh doctor
+scripts/ncore_operator.sh health
+scripts/ncore_operator.sh urls
+scripts/ncore_operator.sh regress
+scripts/ncore_operator.sh apply
+```
+
+Override `NCORE_SSH_HOST`, `NCORE_SSH_KEY`, or `NCORE_REMOTE_REPO` when running outside the default Capy VM. The script centralizes live diagnostics, tailnet URLs, regression, apply, logs, and exposure checks without storing secrets.
+
 ### Tailscale dashboard access
 
 Use `scripts/configure_tailscale_access.sh` on the VM to join Tailscale and expose only the dashboard/API front doors on the Tailscale IP. The script does not store auth keys in the repo. For OAuth auth keys, provide the allowed tag explicitly:

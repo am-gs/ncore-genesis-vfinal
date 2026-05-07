@@ -1,11 +1,61 @@
 {
   "$schema": "https://capy.ai/settings.schema.json",
   "hooks": {
-    "setup": ["python3 -m py_compile core/*.py sovereign/*.py sovereign/supervisor/*.py 2>/dev/null || true"],
+    "setup": [
+      "bash -n scripts/*.sh",
+      "python3 -m py_compile core/*.py sovereign/*.py sovereign/supervisor/*.py 2>/dev/null || true"
+    ],
     "previews": [
-      { "name": "Mission Control", "port": 3004 },
-      { "name": "Agent Zero", "port": 8090 },
-      { "name": "NCore Dashboard", "port": 3002 }
-    ]
+      {
+        "name": "Mission Control",
+        "port": 3004
+      },
+      {
+        "name": "Agent Zero",
+        "port": 8090
+      },
+      {
+        "name": "NCore Dashboard",
+        "port": 3002
+      },
+      {
+        "name": "Grafana",
+        "port": 3001
+      },
+      {
+        "name": "Bifrost",
+        "port": 8000
+      },
+      {
+        "name": "DeerFlow",
+        "port": 2026
+      },
+      {
+        "name": "Mem0",
+        "port": 8300
+      }
+    ],
+    "terminals": [
+      {
+        "name": "live health",
+        "command": "while true; do date -u; ./scripts/ncore_operator.sh health || true; sleep 60; done",
+        "readonly": true,
+        "agents": [
+          "captain"
+        ]
+      },
+      {
+        "name": "repo guard",
+        "command": "while true; do git status --short --branch; bash -n scripts/*.sh >/dev/null && echo scripts-ok || echo scripts-failed; sleep 120; done",
+        "readonly": true,
+        "agents": [
+          "captain"
+        ]
+      }
+    ],
+    "context": {
+      "maxOutputLength": 4000,
+      "truncateStrategy": "tail"
+    }
   }
 }
