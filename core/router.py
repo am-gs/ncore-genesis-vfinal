@@ -1,11 +1,13 @@
 """NCore Genesis — Consensus Router v3.2
 
-v7.6 (April 7 2026):
+v7.7 (May 7 2026):
+  - KIMI tier: Kimi K2.6 via OpenRouter ($0.80/$2.40 per M, 256K context)
+    Best for: long-context analysis, multi-document synthesis, 50K+ token tasks
   - FAST tier: GPT-OSS 20B free (matches o3-mini, $0, 13 providers)
   - FREE_REASONING tier: DeepSeek R1 free ($0, reasoning)
   - UNCENSORED_LOCAL tier: Qwen3.5-35B-A3B abliterated (local Ollama)
   - WORKER tier: DeepSeek V3.2 ($0.14/$0.28 per M, cheapest paid frontier)
-  - 7-tier cascade routes ~90% of tasks to $0 infrastructure
+  - 8-tier cascade routes ~90% of tasks to $0 infrastructure
 
 v7.5 (April 1 2026):
   - Added FAST (Gemini Flash Lite) + FREE_CODER (Qwen3 Coder 480B)
@@ -34,6 +36,7 @@ class ModelTier(Enum):
     CODER           = "coder"           # Qwen3-Coder-30B on Vast
     UNCENSORED      = "uncensored"      # Vast serverless or local abliterated
     UNCENSORED_LOCAL = "uncensored_local"  # Qwen3.5 abliterated on Ollama
+    KIMI            = "kimi"            # Kimi K2.6 via OpenRouter (256K context)
     INVESTIGATION   = "investigation"     # Agent Zero autonomous OSINT/investigation
     IMAGE_GEN       = "image"
     VIDEO_GEN       = "video"
@@ -54,7 +57,7 @@ class RouteDecision:
 
 class NCoreMasterRouter:
     """
-    8-tier routing cascade (v7.6-SOTA — April 7 2026):
+    9-tier routing cascade (v7.7-SOTA — May 7 2026):
       L0:   Media detection         → Vast pod (image / video)
       L0.5: Investigation/OSINT     → Agent Zero autonomous tool execution
       L1:   Trivial heuristics      → FAST (GPT-OSS 20B free, $0)
@@ -62,7 +65,7 @@ class NCoreMasterRouter:
       L1.7: Uncensored detection    → UNCENSORED_LOCAL (Qwen3.5 abliterated, $0)
       L2:   Complex reasoning       → FREE_REASONING (DeepSeek R1 free, $0)
       L3:   Domain keyword          → OPUS | WORKER
-      L4:   Complexity score        → OPUS (≥8) | WORKER (DeepSeek V3.2)
+      L4:   Complexity score        → KIMI (≥8 + long context) | OPUS (≥8) | WORKER (DeepSeek V3.2)
       L5:   Engine selection        → SGLang (multi-turn) vs LMDeploy (first-call)
 
     ~90% of tasks route to $0 infrastructure.
@@ -125,6 +128,13 @@ class NCoreMasterRouter:
                      "pipeline", "sequence", "multiple steps", "chain"]
     HIGH_STAKES_KW = ["production", "deploy", "critical", "mission", "urgent",
                       "must be correct", "cannot fail", "important"]
+    KIMI_KW = [
+        "analyze this entire codebase", "multi-document", "large document", "long context",
+        "50k tokens", "100k tokens", "200k tokens", "massive context",
+        "synthesize", "cross-reference", "literature review", "survey paper",
+        "analyze all files", "entire repository", "full codebase", "project-wide",
+        "comprehensive analysis", "deep research", "systematic review"
+    ]
 
     def __init__(self):
         # Cache Supabase client at init (not per-call) — C3 improvement
@@ -197,6 +207,9 @@ class NCoreMasterRouter:
             ))
 
         score = self._complexity(text, tokens)
+        # L3.5: Long-context / multi-document tasks → Kimi K2.6 (256K context)
+        if any(kw in text for kw in self.KIMI_KW) or (score >= 8 and tokens > 10000):
+            return self._kimi(f"Long-context (complexity {score}/10, {int(tokens)} tokens)")
         if score >= 8 or tokens > 4000:
             return self._opus(f"Complexity {score}/10, {int(tokens)} tokens")
         # v7.6: Free reasoning tier before paid models
@@ -268,6 +281,18 @@ class NCoreMasterRouter:
             endpoint="https://openrouter.ai/api/v1",
             engine="claude", reason=reason,
             estimated_cost_usd=0.10
+        ))
+
+    def _kimi(self, reason: str) -> dict:
+        """T4.5: Kimi K2.6 — long-context specialist (256K context, $0.80/$2.40 per M)."""
+        return asdict(RouteDecision(
+            tier="kimi",
+            model=os.environ.get("KIMI_MODEL", "moonshot/kimi-k2.6"),
+            provider="openrouter",
+            endpoint="https://openrouter.ai/api/v1",
+            engine="direct",
+            reason=f"{reason} | KIMI tier (256K context)",
+            estimated_cost_usd=0.05
         ))
 
     def _complexity(self, text: str, tokens: float) -> int:

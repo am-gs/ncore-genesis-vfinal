@@ -68,6 +68,16 @@ except Exception as e:
     HAS_CODEACT = False
     structlog.get_logger().warning("codeact_init_deferred", error=str(e))
 
+# ── Bifrost LLM Gateway (v7.7) ───────────────────────────────────────────────
+try:
+    from bifrost_client import BifrostClient
+    _BIFROST = BifrostClient()
+    HAS_BIFROST = True
+except Exception as e:
+    _BIFROST = None
+    HAS_BIFROST = False
+    structlog.get_logger().warning("bifrost_init_deferred", error=str(e))
+
 try:
     from planner import TaskPlanner
     _PLANNER = TaskPlanner()
@@ -243,18 +253,42 @@ async def broadcast_ws(event: dict):
     for ws in dead: ws_clients.remove(ws)
 
 
-# ── LLM Calls ─────────────────────────────────────────────────────────────
+# ── LLM Calls (v7.7: Bifrost-first with OpenRouter fallback) ──────────
 async def call_cloud(client: httpx.AsyncClient, model: str, messages: list,
                      max_tokens: int = 4096, temperature: float = 0.4) -> dict:
-    """Returns {content, tokens_in, tokens_out, model} for full observability."""
+    """Returns {content, tokens_in, tokens_out, model, source, cached}.
+
+    Bifrost-first routing: semantic cache + budget enforcement + failover.
+    Falls back to direct OpenRouter if Bifrost is unreachable.
+    """
+    # Route through Bifrost if available
+    if HAS_BIFROST and _BIFROST is not None:
+        try:
+            result = await _BIFROST.chat_completion(
+                model=model,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+            # Augment result with cost estimation if not present
+            if result.get("cost_usd", 0) == 0 and result.get("source") != "bifrost":
+                # Estimate from token counts (OpenRouter pricing)
+                result["cost_usd"] = _estimate_cost(model, result["tokens_in"], result["tokens_out"])
+            log.info("bifrost.call_ok", model=model, source=result.get("source"),
+                     cached=result.get("cached"), cost=result.get("cost_usd"))
+            return result
+        except Exception as e:
+            log.warning("bifrost.call_failed", error=str(e), model=model)
+
+    # Fallback: direct OpenRouter call
     r = await client.post(f"{OPENROUTER_URL}/chat/completions", headers={
         "Authorization": f"Bearer {os.environ.get('OPENROUTER_API_KEY', '')}",
-        "HTTP-Referer": "https://ncore.internal",
-        "X-Title": "NCore Genesis",
+        "HTTP-Referer": "https://nllm.ing",
+        "X-Title": "NLLM.ING",
     }, json={
         "model": model, "messages": messages,
         "max_tokens": max_tokens, "temperature": temperature,
-    }, timeout=60.0)
+    }, timeout=120.0)
     r.raise_for_status()
     data = r.json()
     usage = data.get("usage", {})
@@ -263,7 +297,28 @@ async def call_cloud(client: httpx.AsyncClient, model: str, messages: list,
         "tokens_in": usage.get("prompt_tokens", 0),
         "tokens_out": usage.get("completion_tokens", 0),
         "model": data.get("model", model),
+        "source": "openrouter",
+        "cached": False,
+        "cost_usd": _estimate_cost(model, usage.get("prompt_tokens", 0),
+                                     usage.get("completion_tokens", 0)),
     }
+
+
+def _estimate_cost(model: str, tokens_in: int, tokens_out: int) -> float:
+    """Rough per-model cost estimates (USD per 1M tokens)."""
+    pricing: dict[str, tuple[float, float]] = {
+        "gpt-4.1-nano": (0.0, 0.0),
+        "deepseek-r1": (0.55, 2.19),
+        "deepseek-chat": (0.14, 0.28),
+        "claude-opus": (15.0, 75.0),
+        "claude-sonnet": (3.0, 15.0),
+        "kimi-k2.6": (0.80, 2.40),
+    }
+    for key, (p_in, p_out) in pricing.items():
+        if key in model.lower():
+            return (tokens_in * p_in + tokens_out * p_out) / 1_000_000
+    # Default: DeepSeek V3 pricing
+    return (tokens_in * 0.14 + tokens_out * 0.28) / 1_000_000
 
 
 async def call_local(client: httpx.AsyncClient, messages: list,
@@ -896,6 +951,36 @@ async def ready():
 @app.get("/metrics")
 async def metrics():
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+# ── Bifrost gateway endpoints ───────────────────────────────────────────
+@app.get("/bifrost/status")
+async def bifrost_status():
+    """Bifrost gateway health, budget, and cache stats."""
+    if not HAS_BIFROST or not _BIFROST:
+        return {"status": "disabled", "reason": "Bifrost not initialized"}
+    try:
+        health = await _BIFROST.get_health()
+        budget = await _BIFROST.get_budget_status()
+        cache = await _BIFROST.get_cache_stats()
+        return {
+            "status": health.get("status", "unknown"),
+            "health": health,
+            "budget": budget,
+            "cache": cache,
+        }
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+@app.get("/bifrost/models")
+async def bifrost_models():
+    """List models available through Bifrost gateway."""
+    if not HAS_BIFROST or not _BIFROST:
+        return {"status": "disabled", "models": []}
+    try:
+        models = await _BIFROST.list_models()
+        return {"status": "ok", "count": len(models), "models": models[:50]}
+    except Exception as e:
+        return {"status": "error", "error": str(e), "models": []}
 
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):

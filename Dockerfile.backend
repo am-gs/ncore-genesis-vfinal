@@ -1,0 +1,44 @@
+# ── NLLM.ING Backend Dockerfile ──────────────────────────────────────
+# Production FastAPI orchestrator with Bifrost gateway integration
+# Base: Python 3.12 slim for minimal attack surface
+
+FROM python:3.12-slim-bookworm
+
+LABEL org.opencontainers.image.title="NLLM.ING Backend"
+LABEL org.opencontainers.image.description="Autonomous AI agent orchestrator with Bifrost LLM gateway"
+
+# ── System deps ───────────────────────────────────────────────────────
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git wget curl ca-certificates \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── Python environment ────────────────────────────────────────────────
+WORKDIR /app
+
+# Install deps first (layer caching)
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# ── Application code ──────────────────────────────────────────────────
+COPY core/ /app/core/
+COPY deploy/ /app/deploy/
+
+# ── Workspace volume mount point ──────────────────────────────────────
+RUN mkdir -p /app/workspace /app/uploads
+
+# ── Health check ─────────────────────────────────────────────────────
+HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=3 \
+    CMD wget -qO- http://localhost:3001/health || exit 1
+
+# ── Runtime ──────────────────────────────────────────────────────────
+EXPOSE 3001
+
+# Uvicorn: single worker (scale via Docker replicas), keep-alive for WS
+CMD ["uvicorn", "core.orchestrator:app", \
+     "--host", "0.0.0.0", \
+     "--port", "3001", \
+     "--workers", "1", \
+     "--loop", "uvloop", \
+     "--proxy-headers", \
+     "--access-log"]

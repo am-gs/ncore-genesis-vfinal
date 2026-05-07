@@ -1,0 +1,140 @@
+version: "3.9"
+
+services:
+  # --- Bifrost LLM Gateway ---
+  # 50x faster than LiteLLM, <100µs overhead, semantic caching, budget enforcement
+  bifrost:
+    image: maximhq/bifrost:latest
+    container_name: nllm-bifrost
+    ports:
+      - "8080:8080"
+    environment:
+      - BIFROST_API_KEY=${BIFROST_API_KEY:-nllm-local}
+      - BIFROST_BUDGET_DAILY_USD=${BIFROST_BUDGET_DAILY_USD:-2.0}
+      - BIFROST_SEMANTIC_CACHE=true
+      - BIFROST_CACHE_PROVIDER=redis
+      - BIFROST_CACHE_URL=redis://redis:6379/0
+      - BIFROST_LOG_LEVEL=info
+    volumes:
+      - bifrost_data:/app/data
+    depends_on:
+      - redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  # --- PostgreSQL ---
+  # Multi-tenant persistent storage (replaces SQLite for cloud deployment)
+  postgres:
+    image: postgres:17-alpine
+    container_name: nllm-postgres
+    environment:
+      POSTGRES_USER: nllm
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme-in-production}
+      POSTGRES_DB: nllm
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./deploy/postgres-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "127.0.0.1:5432:5432"  # Bind to localhost only
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nllm -d nllm"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # --- Redis ---
+  # Blackboard shared state + Bifrost semantic cache
+  redis:
+    image: redis:7-alpine
+    container_name: nllm-redis
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    ports:
+      - "127.0.0.1:6379:6379"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # --- NLLM Backend (FastAPI) ---
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: nllm-backend
+    environment:
+      # --- Bifrost integration ---
+      - BIFROST_URL=http://bifrost:8080
+      - BIFROST_API_KEY=${BIFROST_API_KEY:-nllm-local}
+      # --- Database ---
+      - POSTGRES_URL=postgresql://nllm:${POSTGRES_PASSWORD:-changeme-in-production}@postgres:5432/nllm
+      # --- Redis (TCP, not UDS) ---
+      - REDIS_URL=redis://redis:6379
+      - NCORE_REDIS_UDS=  # disable UDS
+      # --- LLM Providers ---
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - LOCAL_LLM_URL=http://localhost:9090
+      # --- Workspace ---
+      - NLLM_WORKSPACE=/app/workspace
+      # --- Models ---
+      - FAST_MODEL=${FAST_MODEL:-openai/gpt-4.1-nano}
+      - CODER_MODEL=${CODER_MODEL:-deepseek/deepseek-chat}
+      - REASONING_MODEL=${REASONING_MODEL:-deepseek/deepseek-r1}
+      - WORKER_MODEL=${WORKER_MODEL:-deepseek/deepseek-chat}
+      - OPUS_MODEL=${OPUS_MODEL:-anthropic/claude-opus-4.6}
+      - KIMI_MODEL=${KIMI_MODEL:-moonshot/kimi-k2.6}
+      - PLANNER_MODEL=${PLANNER_MODEL:-openai/gpt-4.1-nano}
+    ports:
+      - "3001:3001"
+    volumes:
+      - nllm_workspace:/app/workspace
+      - ./core:/app/core:ro
+      - ./deploy:/app/deploy:ro
+    depends_on:
+      bifrost:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # --- Nginx (SSL reverse proxy) ---
+  # Handles WebSocket upgrade, static files, SSL termination
+  nginx:
+    image: nginx:alpine
+    container_name: nllm-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./deploy/ssl:/etc/nginx/ssl:ro
+      - nllm_workspace:/var/www/workspace:ro
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  bifrost_data:
+    driver: local
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  nllm_workspace:
+    driver: local

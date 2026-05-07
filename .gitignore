@@ -30,3 +30,5 @@ Thumbs.db
 # Logs
 *.log
 journald/
+apps/nllm-dashboard/node_modules
+apps/nllm-dashboard/.next
