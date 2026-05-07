@@ -4,12 +4,14 @@ import { usePathname } from 'next/navigation';
 import { useAppStore } from '@/stores/app-store';
 import {
   LayoutDashboard, Activity, Table, ScrollText, Shield, Bot, Brain,
-  GitBranch, Settings, ChevronLeft, ChevronRight, Zap, Code, Workflow
+  GitBranch, Settings, ChevronLeft, ChevronRight, Zap, Code, Workflow,
+  Cpu
 } from 'lucide-react';
 
 const items = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/tasks/', label: 'Tasks', icon: GitBranch },
+  { href: '/deep-agents/', label: 'Deep Agents', icon: Cpu },
   { href: '/workspace/', label: 'Workspace', icon: Code },
   { href: '/services/', label: 'Services', icon: Activity },
   { href: '/runs/', label: 'Runs', icon: Table },
