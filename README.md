@@ -43,6 +43,18 @@ scripts/run_sovereign_regression.sh
 
 Reports are written under `/home/ubuntu/sovereign/logs/`.
 
+### Tailscale dashboard access
+
+Use `scripts/configure_tailscale_access.sh` on the VM to join Tailscale and expose only the dashboard/API front doors on the Tailscale IP. The script does not store auth keys in the repo. For OAuth auth keys, provide the allowed tag explicitly:
+
+```bash
+TAILSCALE_AUTHKEY=tskey-client-... \
+TAILSCALE_ADVERTISE_TAGS=tag:ncore \
+scripts/configure_tailscale_access.sh
+```
+
+It proxies Mission Control `3004`, Agent Zero `8090`, legacy dashboard `3002`, Grafana `3001`, Bifrost `8000`, DeerFlow `2026`, and Mem0 `8300` from localhost to the tailnet IP only. Databases remain localhost-bound.
+
 Known limitations:
 
 - The live VM is Ubuntu 22.04 arm64, not Oracle Linux.
