@@ -53,7 +53,7 @@ TAILSCALE_ADVERTISE_TAGS=tag:ncore \
 scripts/configure_tailscale_access.sh
 ```
 
-It proxies Mission Control `3004`, Agent Zero `8090`, legacy dashboard `3002`, Grafana `3001`, Bifrost `8000`, DeerFlow `2026`, and Mem0 `8300` from localhost to the tailnet IP only. Databases remain localhost-bound.
+It proxies Mission Control `3004`, Agent Zero `8090`, legacy dashboard `3002`, Grafana `3001`, Bifrost `8000`, DeerFlow `2026`, and Mem0 `8300` from localhost to the tailnet IP only. Databases remain localhost-bound. If a managed port is already wildcard-bound on `0.0.0.0`, `*`, or `[::]`, the proxy service fails closed instead of treating the public bind as acceptable.
 
 Known limitations:
 

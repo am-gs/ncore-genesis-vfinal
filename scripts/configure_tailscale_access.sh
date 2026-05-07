@@ -60,11 +60,15 @@ trap cleanup EXIT
 listen() {
   local port="$1"
   local target="$2"
-  if ss -tlnH | awk '{print $4}' | grep -Eq "(^|:)${port}$"; then
-    if ss -tlnH | awk '{print $4}' | grep -Eq "(^|\[?${TSIP}\]?:)${port}$|(^|0\.0\.0\.0:)${port}$|(^|\*:)${port}$"; then
-      echo "port ${port} already reachable on tailnet or wildcard; skipping proxy"
-      return 0
-    fi
+  local listeners
+  listeners="$(ss -tlnH | awk '{print $4}' | grep -E "(^|:|\])${port}$" || true)"
+  if grep -Eq "(^0\.0\.0\.0:|^\*:|^\[::\]:|^:::)${port}$" <<<"$listeners"; then
+    echo "port ${port} is wildcard-bound and may be publicly reachable; refusing to continue" >&2
+    return 1
+  fi
+  if grep -Fxq "${TSIP}:${port}" <<<"$listeners"; then
+    echo "port ${port} already bound on Tailscale IP; skipping proxy"
+    return 0
   fi
   socat "TCP-LISTEN:${port},bind=${TSIP},fork,reuseaddr" "TCP:${target}" &
   pids+=("$!")
