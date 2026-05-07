@@ -1,15 +1,48 @@
+#!/usr/bin/env python3
+"""
+Sovereign Mission Control — Cognitive Execution Control Plane.
+
+Designed to be compatible with langchain-ai/deepagents SDK patterns:
+- Planning tool: plan_steps field maps to Deep Agents' planning
+- Subagent spawning: /spawn endpoint maps to Deep Agents' subagent spawning
+- Filesystem backend: artifacts stored as JSON in the task store
+- Task state machine maps to LangGraph node states
+"""
+
+import asyncio
 import json
 import os
+import random
 import subprocess
+import time
+import uuid
+from datetime import datetime, timezone
+from enum import Enum
 from pathlib import Path
+from typing import List, Optional
 
 import httpx
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse, PlainTextResponse
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, PlainTextResponse, StreamingResponse
 
 ROOT = Path('/home/ubuntu/sovereign')
 LOGS = ROOT / 'logs'
+TASKS_FILE = ROOT / 'tasks.json'
+
 app = FastAPI(title='Sovereign Mission Control')
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        'http://localhost:3000',
+        'http://127.0.0.1:3000',
+        'http://localhost:3002',
+        'http://127.0.0.1:3002',
+    ],
+    allow_credentials=True,
+    allow_methods=['*'],
+    allow_headers=['*'],
+)
 
 SERVICES = {
     'Agent Zero': {'type': 'http', 'url': 'http://127.0.0.1:8090/api/health', 'restart': ['docker', 'restart', 'agent-zero'], 'link': 'http://ncore-v2:8090'},
@@ -24,6 +57,223 @@ SERVICES = {
     'Dashboard': {'type': 'systemd', 'unit': 'ncore-dashboard', 'url': 'http://127.0.0.1:3002/', 'link': 'http://127.0.0.1:3002'},
 }
 
+# ---------------------------------------------------------------------------
+# Task State Machine
+# ---------------------------------------------------------------------------
+
+class TaskState(str, Enum):
+    PENDING = "pending"
+    PLANNING = "planning"
+    RUNNING = "running"
+    PAUSED = "paused"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    RETRYING = "retrying"
+    CANCELLED = "cancelled"
+
+
+def iso_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def new_task_dict(
+    name: str,
+    description: str,
+    agent: str,
+    status: TaskState = TaskState.PLANNING,
+    plan_steps: Optional[List[dict]] = None,
+    parent_id: Optional[str] = None,
+    branch_from: Optional[str] = None,
+) -> dict:
+    now = iso_now()
+    plan = []
+    if plan_steps:
+        for step in plan_steps:
+            plan.append({
+                "id": str(uuid.uuid4()),
+                "description": step.get("description", ""),
+                "status": TaskState.PENDING,
+                "agent": step.get("agent") or agent,
+                "depends_on": step.get("depends_on", []),
+                "output": None,
+            })
+    return {
+        "id": str(uuid.uuid4()),
+        "name": name,
+        "description": description,
+        "status": status,
+        "agent": agent,
+        "progress": 0.0,
+        "created_at": now,
+        "updated_at": now,
+        "plan": plan,
+        "subtasks": [],
+        "parent_id": parent_id,
+        "branch_from": branch_from,
+        "latency_ms": 0,
+        "retries": 0,
+        "error": None,
+        "artifacts": [],
+        "memory_refs": [],
+    }
+
+
+# In-memory store + persistence
+_tasks: dict[str, dict] = {}
+_simulation_tasks: dict[str, asyncio.Task] = {}
+_lock = asyncio.Lock()
+_sse_queues: dict[str, asyncio.Queue] = {}
+
+
+def _load_tasks() -> None:
+    global _tasks
+    if TASKS_FILE.exists():
+        try:
+            with open(TASKS_FILE, "r") as f:
+                data = json.load(f)
+            _tasks = {t["id"]: t for t in data}
+        except Exception:
+            _tasks = {}
+    else:
+        _tasks = {}
+
+
+def _save_tasks() -> None:
+    try:
+        with open(TASKS_FILE, "w") as f:
+            json.dump(list(_tasks.values()), f, indent=2)
+    except Exception:
+        pass
+
+
+_load_tasks()
+
+
+def _broadcast(task_id: str, data: dict) -> None:
+    """Broadcast task update to all SSE listeners."""
+    payload = json.dumps({"task_id": task_id, "data": data})
+    for q in list(_sse_queues.values()):
+        try:
+            q.put_nowait(payload)
+        except asyncio.QueueFull:
+            pass
+
+
+# ---------------------------------------------------------------------------
+# Simulation
+# ---------------------------------------------------------------------------
+
+async def _simulate_task(task_id: str) -> None:
+    while True:
+        await asyncio.sleep(random.uniform(2.0, 5.0))
+        async with _lock:
+            task = _tasks.get(task_id)
+            if not task or task["status"] != TaskState.RUNNING:
+                return
+            # Random failure (10% chance per tick)
+            if random.random() < 0.10:
+                task["status"] = TaskState.FAILED
+                task["error"] = "Simulated agent failure during execution"
+                task["updated_at"] = iso_now()
+                _save_tasks()
+                _broadcast(task_id, {"status": "failed", "error": task["error"]})
+                return
+            # Increment progress
+            inc = random.uniform(10.0, 25.0)
+            task["progress"] = min(100.0, task["progress"] + inc)
+            if task["progress"] >= 100.0:
+                task["status"] = TaskState.COMPLETED
+                task["progress"] = 100.0
+            task["updated_at"] = iso_now()
+            _save_tasks()
+            _broadcast(task_id, {"status": task["status"], "progress": task["progress"]})
+            if task["status"] == TaskState.COMPLETED:
+                return
+
+
+def _start_simulation(task_id: str) -> None:
+    if task_id in _simulation_tasks:
+        _simulation_tasks[task_id].cancel()
+    _simulation_tasks[task_id] = asyncio.create_task(_simulate_task(task_id))
+
+
+def _stop_simulation(task_id: str) -> None:
+    t = _simulation_tasks.pop(task_id, None)
+    if t:
+        t.cancel()
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _resolve_task(task_id: str) -> dict:
+    task = _tasks.get(task_id)
+    if not task:
+        raise HTTPException(404, "task not found")
+    return task
+
+
+def _cascade_cancel(task_id: str) -> None:
+    task = _tasks.get(task_id)
+    if not task:
+        return
+    task["status"] = TaskState.CANCELLED
+    task["updated_at"] = iso_now()
+    _stop_simulation(task_id)
+    for sub_id in task.get("subtasks", []):
+        _cascade_cancel(sub_id)
+
+
+def _task_to_json(task: dict, depth: int = 0) -> dict:
+    out = dict(task)
+    if depth < 3:
+        out["subtasks_detail"] = []
+        for sid in task.get("subtasks", []):
+            sub = _tasks.get(sid)
+            if sub:
+                out["subtasks_detail"].append(_task_to_json(sub, depth + 1))
+    return out
+
+
+def _build_tree(task: dict) -> dict:
+    node = dict(task)
+    node["children"] = []
+    for sid in task.get("subtasks", []):
+        sub = _tasks.get(sid)
+        if sub:
+            node["children"].append(_build_tree(sub))
+    return node
+
+
+def _get_branches(task_id: str) -> List[dict]:
+    results = []
+    for t in _tasks.values():
+        if t.get("branch_from") == task_id:
+            results.append(t)
+    return results
+
+
+def _decompose_plan_steps(parent_id: str, steps: List[dict], agent: str) -> List[str]:
+    sub_ids = []
+    for step in steps:
+        child = new_task_dict(
+            name=step.get("description", "Subtask"),
+            description=step.get("description", ""),
+            agent=step.get("agent") or agent,
+            status=TaskState.PENDING,
+            parent_id=parent_id,
+        )
+        if step.get("sub_steps"):
+            child["subtasks"] = _decompose_plan_steps(child["id"], step["sub_steps"], agent)
+        _tasks[child["id"]] = child
+        sub_ids.append(child["id"])
+    return sub_ids
+
+
+# ---------------------------------------------------------------------------
+# Existing endpoints
+# ---------------------------------------------------------------------------
 
 def run(cmd: list[str], timeout: int = 20) -> tuple[int, str]:
     p = subprocess.run(cmd, text=True, capture_output=True, timeout=timeout)
@@ -31,7 +281,6 @@ def run(cmd: list[str], timeout: int = 20) -> tuple[int, str]:
 
 
 async def http_ok(url: str) -> tuple[bool, float, str]:
-    import time
     started = time.perf_counter()
     try:
         async with httpx.AsyncClient(timeout=5) as client:
@@ -105,6 +354,233 @@ async def restart(name: str):
 @app.get('/', response_class=HTMLResponse)
 async def index():
     return HTML
+
+
+# ---------------------------------------------------------------------------
+# SSE Streaming — Real-time task updates
+# ---------------------------------------------------------------------------
+
+@app.get("/api/tasks/stream")
+async def stream_tasks():
+    """Server-Sent Events endpoint for real-time task updates."""
+    q = asyncio.Queue(maxsize=100)
+    listener_id = str(uuid.uuid4())
+    _sse_queues[listener_id] = q
+
+    async def event_generator():
+        try:
+            # Send initial snapshot
+            async with _lock:
+                yield f"data: {json.dumps({'type': 'snapshot', 'tasks': list(_tasks.values())})}\n\n"
+            while True:
+                payload = await asyncio.wait_for(q.get(), timeout=30.0)
+                yield f"data: {payload}\n\n"
+        except asyncio.TimeoutError:
+            yield f"data: {json.dumps({'type': 'heartbeat'})}\n\n"
+        except asyncio.CancelledError:
+            pass
+        finally:
+            _sse_queues.pop(listener_id, None)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# Task Execution Control Plane endpoints
+# ---------------------------------------------------------------------------
+
+@app.get("/api/tasks")
+async def list_tasks(status: Optional[TaskState] = None, limit: int = Query(100)):
+    async with _lock:
+        items = list(_tasks.values())
+        if status:
+            items = [t for t in items if t["status"] == status]
+        items = items[:max(1, min(limit, 1000))]
+        return {"tasks": items}
+
+
+@app.post("/api/tasks")
+async def create_task(body: dict):
+    name = body.get("name")
+    description = body.get("description", "")
+    agent = body.get("agent", "default")
+    plan_steps = body.get("plan_steps")
+    if not name:
+        raise HTTPException(400, "name is required")
+
+    async with _lock:
+        task = new_task_dict(name, description, agent, status=TaskState.PLANNING, plan_steps=plan_steps)
+        if plan_steps and len(plan_steps) > 1:
+            task["subtasks"] = _decompose_plan_steps(task["id"], plan_steps, agent)
+        _tasks[task["id"]] = task
+        _save_tasks()
+
+    # Transition planning -> running -> start simulation
+    async with _lock:
+        task["status"] = TaskState.RUNNING
+        task["updated_at"] = iso_now()
+        _save_tasks()
+    _start_simulation(task["id"])
+    _broadcast(task["id"], {"status": "running", "progress": 0})
+
+    return task
+
+
+@app.get("/api/tasks/{task_id}")
+async def get_task(task_id: str):
+    async with _lock:
+        task = _resolve_task(task_id)
+        return _task_to_json(task)
+
+
+@app.post("/api/tasks/{task_id}/spawn")
+async def spawn_subtask(task_id: str, body: dict):
+    parent = _resolve_task(task_id)
+    name = body.get("name")
+    description = body.get("description", "")
+    agent = body.get("agent", parent.get("agent", "default"))
+    if not name:
+        raise HTTPException(400, "name is required")
+
+    async with _lock:
+        child = new_task_dict(name, description, agent, status=TaskState.PLANNING, parent_id=task_id)
+        child["status"] = TaskState.RUNNING
+        child["updated_at"] = iso_now()
+        _tasks[child["id"]] = child
+        parent["subtasks"].append(child["id"])
+        parent["updated_at"] = iso_now()
+        _save_tasks()
+
+    _start_simulation(child["id"])
+    _broadcast(task_id, {"type": "spawn", "subtask_id": child["id"]})
+    return child
+
+
+@app.post("/api/tasks/{task_id}/branch")
+async def branch_task(task_id: str, body: dict):
+    source = _resolve_task(task_id)
+    name = body.get("name")
+    description = body.get("description", "")
+    from_step_id = body.get("from_step_id")
+    if not name:
+        raise HTTPException(400, "name is required")
+
+    # Copy relevant plan steps from the source task
+    copied_plan = []
+    for step in source.get("plan", []):
+        if not from_step_id or step["id"] == from_step_id:
+            copied_plan.append({
+                "id": str(uuid.uuid4()),
+                "description": step["description"],
+                "status": TaskState.PENDING,
+                "agent": step.get("agent"),
+                "depends_on": [],
+                "output": None,
+            })
+            if from_step_id:
+                break
+
+    async with _lock:
+        task = new_task_dict(
+            name=name,
+            description=description,
+            agent=source.get("agent", "default"),
+            status=TaskState.RUNNING,
+            plan_steps=copied_plan,
+            branch_from=task_id,
+        )
+        _tasks[task["id"]] = task
+        _save_tasks()
+
+    _start_simulation(task["id"])
+    _broadcast(task_id, {"type": "branch", "branch_id": task["id"]})
+    return task
+
+
+@app.post("/api/tasks/{task_id}/pause")
+async def pause_task(task_id: str):
+    async with _lock:
+        task = _resolve_task(task_id)
+        if task["status"] != TaskState.RUNNING:
+            raise HTTPException(400, "task is not running")
+        task["status"] = TaskState.PAUSED
+        task["updated_at"] = iso_now()
+        _save_tasks()
+    _stop_simulation(task_id)
+    _broadcast(task_id, {"status": "paused"})
+    return task
+
+
+@app.post("/api/tasks/{task_id}/resume")
+async def resume_task(task_id: str):
+    async with _lock:
+        task = _resolve_task(task_id)
+        if task["status"] != TaskState.PAUSED:
+            raise HTTPException(400, "task is not paused")
+        task["status"] = TaskState.RUNNING
+        task["updated_at"] = iso_now()
+        _save_tasks()
+    _start_simulation(task_id)
+    _broadcast(task_id, {"status": "running"})
+    return task
+
+
+@app.post("/api/tasks/{task_id}/retry")
+async def retry_task(task_id: str):
+    async with _lock:
+        task = _resolve_task(task_id)
+        task["retries"] += 1
+        task["status"] = TaskState.RETRYING
+        task["error"] = None
+        task["updated_at"] = iso_now()
+        _save_tasks()
+
+    async def _delayed_resume():
+        await asyncio.sleep(2.0)
+        async with _lock:
+            t = _tasks.get(task_id)
+            if t and t["status"] == TaskState.RETRYING:
+                t["status"] = TaskState.RUNNING
+                t["updated_at"] = iso_now()
+                _save_tasks()
+        _start_simulation(task_id)
+        _broadcast(task_id, {"status": "running", "retries": task["retries"]})
+
+    asyncio.create_task(_delayed_resume())
+    return task
+
+
+@app.post("/api/tasks/{task_id}/cancel")
+async def cancel_task(task_id: str):
+    async with _lock:
+        _resolve_task(task_id)
+        _cascade_cancel(task_id)
+        _save_tasks()
+    _broadcast(task_id, {"status": "cancelled"})
+    return _tasks.get(task_id)
+
+
+@app.get("/api/tasks/{task_id}/tree")
+async def get_tree(task_id: str):
+    async with _lock:
+        task = _resolve_task(task_id)
+        return {"tree": _build_tree(task)}
+
+
+@app.get("/api/tasks/{task_id}/trajectory")
+async def get_trajectory(task_id: str):
+    async with _lock:
+        _resolve_task(task_id)
+        branches = _get_branches(task_id)
+        return {"task_id": task_id, "branches": branches}
 
 
 HTML = r"""
