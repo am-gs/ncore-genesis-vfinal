@@ -148,7 +148,7 @@ export default function WorkspacePage() {
     setChatLoading(true);
 
     try {
-      const apiMessages = chatMessages.concat(userMsg).filter(m => m.role !== 'system').map(m => ({ role: m.role, content: m.content }));
+      const apiMessages = chatMessages.concat(userMsg).map(m => ({ role: m.role, content: m.content }));
       const res = await chatDeerFlow(apiMessages, 'workspace');
       
       // Simulate tool calls
