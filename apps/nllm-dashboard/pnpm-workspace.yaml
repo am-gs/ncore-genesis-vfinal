@@ -1,0 +1,4 @@
+     1	ignoredBuiltDependencies:
+     2	  - sharp
+     3	  - unrs-resolver
+     4	
