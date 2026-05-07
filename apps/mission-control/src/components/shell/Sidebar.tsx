@@ -4,18 +4,20 @@ import { usePathname } from 'next/navigation';
 import { useAppStore } from '@/stores/app-store';
 import {
   LayoutDashboard, Activity, Table, ScrollText, Shield, Bot, Brain,
-  GitBranch, Settings, ChevronLeft, ChevronRight, Zap
+  GitBranch, Settings, ChevronLeft, ChevronRight, Zap, Code, Workflow
 } from 'lucide-react';
 
 const items = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/tasks/', label: 'Tasks', icon: GitBranch },
+  { href: '/workspace/', label: 'Workspace', icon: Code },
   { href: '/services/', label: 'Services', icon: Activity },
   { href: '/runs/', label: 'Runs', icon: Table },
   { href: '/logs/', label: 'Logs', icon: ScrollText },
   { href: '/bifrost/', label: 'Bifrost', icon: Shield },
   { href: '/deerflow/', label: 'DeerFlow', icon: Bot },
   { href: '/mem0/', label: 'Mem0', icon: Brain },
-  { href: '/workflow/', label: 'Workflow', icon: GitBranch },
+  { href: '/workflow/', label: 'Workflow', icon: Workflow },
   { href: '/settings/', label: 'Settings', icon: Settings },
 ];
 

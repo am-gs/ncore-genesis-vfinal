@@ -4,18 +4,20 @@ import { useRouter } from 'next/navigation';
 import { useAppStore } from '@/stores/app-store';
 import {
   LayoutDashboard, Activity, Table, ScrollText, Shield, Bot, Brain,
-  GitBranch, Settings, RefreshCw, Copy, X, ArrowRight
+  GitBranch, Settings, RefreshCw, Copy, X, ArrowRight, Code, Workflow
 } from 'lucide-react';
 
 const commands = [
   { id: 'dash', label: 'Go to Dashboard', icon: LayoutDashboard, href: '/' },
+  { id: 'tasks', label: 'Go to Tasks', icon: GitBranch, href: '/tasks/' },
+  { id: 'workspace', label: 'Go to Workspace', icon: Code, href: '/workspace/' },
   { id: 'svc', label: 'Go to Services', icon: Activity, href: '/services/' },
   { id: 'runs', label: 'Go to Runs', icon: Table, href: '/runs/' },
   { id: 'logs', label: 'Go to Logs', icon: ScrollText, href: '/logs/' },
   { id: 'bifrost', label: 'Go to Bifrost', icon: Shield, href: '/bifrost/' },
   { id: 'deer', label: 'Go to DeerFlow', icon: Bot, href: '/deerflow/' },
   { id: 'mem0', label: 'Go to Mem0', icon: Brain, href: '/mem0/' },
-  { id: 'wf', label: 'Go to Workflow', icon: GitBranch, href: '/workflow/' },
+  { id: 'wf', label: 'Go to Workflow', icon: Workflow, href: '/workflow/' },
   { id: 'settings', label: 'Go to Settings', icon: Settings, href: '/settings/' },
   { id: 'refresh', label: 'Refresh all data', icon: RefreshCw, action: () => window.location.reload() },
   { id: 'copy', label: 'Copy page URL', icon: Copy, action: () => navigator.clipboard.writeText(window.location.href) },

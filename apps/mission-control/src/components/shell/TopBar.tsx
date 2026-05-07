@@ -5,6 +5,8 @@ import { Bell, Search } from 'lucide-react';
 
 const titles: Record<string, string> = {
   '/': 'Dashboard',
+  '/tasks': 'Task Execution',
+  '/workspace': 'Agent Workspace',
   '/services': 'Services',
   '/runs': 'Task Runs',
   '/logs': 'System Logs',
