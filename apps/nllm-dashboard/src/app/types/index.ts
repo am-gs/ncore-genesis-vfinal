@@ -1,79 +1,118 @@
-     1	// Types for the NLLM.ING Dashboard
-     2	
-     3	export interface Agent {
-     4	  role: string;
-     5	  prompt: string;
-     6	  uncensored: boolean;
-     7	  max_tokens: number;
-     8	  tool?: 'gpu_image' | 'gpu_video' | 'browser' | 'code' | 'osint';
-     9	}
-    10	
-    11	export interface TaskPlan {
-    12	  task_id: string;
-    13	  agents: Agent[];
-    14	  plan_time: number;
-    15	}
-    16	
-    17	export interface AgentResult {
-    18	  role: string;
-    19	  status: 'ok' | 'error';
-    20	  latency: number;
-    21	  provider: 'local' | 'cloud';
-    22	  uncensored: boolean;
-    23	  tokens_in: number;
-    24	  tokens_out: number;
-    25	  model: string;
-    26	  output: string;
-    27	}
-    28	
-    29	export interface TaskResult {
-    30	  output: string;
-    31	  route: {
-    32	    tier: string;
-    33	    estimated_cost_usd: number;
-    34	  };
-    35	  task_id: string;
-    36	  agents: number;
-    37	  plan_time: number;
-    38	  exec_time: number;
-    39	  latency_s: number;
-    40	  cost_usd: number;
-    41	  tokens: {
-    42	    in: number;
-    43	    out: number;
-    44	    total: number;
-    45	  };
-    46	  specialist_results: AgentResult[];
-    47	}
-    48	
-    49	export interface Session {
-    50	  id: string;
-    51	  title: string;
-    52	  status: 'active' | 'completed' | 'error' | 'idle';
-    53	  createdAt: Date;
-    54	  updatedAt: Date;
-    55	  task?: string;
-    56	  result?: TaskResult;
-    57	}
-    58	
-    59	export interface FileItem {
-    60	  name: string;
-    61	  type: 'image' | 'video' | 'audio' | 'document';
-    62	  size: number;
-    63	  url: string;
-    64	  modified: number;
-    65	}
-    66	
-    67	export interface UsageStats {
-    68	  totalTokens: number;
-    69	  totalCost: number;
-    70	  requests: {
-    71	    timestamp: number;
-    72	    model: string;
-    73	    inputTokens: number;
-    74	    outputTokens: number;
-    75	    cost: number;
-    76	    latency: number;
-    77	    status: 'ok' | 'error';
-    78	  }[];
-    79	}
+// Types for the NLLM.ING Dashboard — Manus-style three-panel layout
+
+export interface Agent {
+  role: string;
+  prompt: string;
+  uncensored: boolean;
+  max_tokens: number;
+  tool?: 'gpu_image' | 'gpu_video' | 'browser' | 'code' | 'codeact' | 'osint' | null;
+  execution_mode?: 'llm' | 'codeact' | 'browser' | 'agent_zero';
+  depends_on?: string[];
+  parallel_with?: string[];
+}
+
+export interface TaskPlan {
+  task_id: string;
+  agents: Agent[];
+  plan_time: number;
+}
+
+export interface AgentResult {
+  role: string;
+  status: 'ok' | 'error' | 'running' | 'pending';
+  latency: number;
+  provider: string;
+  uncensored: boolean;
+  tokens_in: number;
+  tokens_out: number;
+  model: string;
+  output: string;
+}
+
+export interface TaskResult {
+  output: string;
+  route: {
+    tier: string;
+    estimated_cost_usd: number;
+    model: string;
+    provider: string;
+  };
+  task_id: string;
+  agents: number;
+  plan_time: number;
+  exec_time: number;
+  latency_s: number;
+  cost_usd: number;
+  tokens: {
+    in: number;
+    out: number;
+    total: number;
+  };
+  specialist_results: AgentResult[];
+}
+
+export interface Session {
+  id: string;
+  title: string;
+  status: 'active' | 'completed' | 'error' | 'idle' | 'paused';
+  createdAt: number;
+  updatedAt: number;
+  task?: string;
+  result?: TaskResult;
+}
+
+export interface FileNode {
+  name: string;
+  path: string;
+  type: 'image' | 'video' | 'audio' | 'document' | 'code' | 'directory';
+  size: number;
+  modified: number;
+  url?: string;
+  children?: FileNode[];
+}
+
+export interface BudgetInfo {
+  daily: number;
+  daily_limit: number;
+  monthly: number;
+  monthly_limit: number;
+  cache_hit_rate: number;
+}
+
+// ── WebSocket message types (real-time bidirectional) ──────────────
+export type WSMessage =
+  | { type: 'task_start'; task_id: string; task: string; plan: TaskPlan }
+  | { type: 'agent_update'; task_id: string; agent: AgentStatus }
+  | { type: 'terminal_output'; task_id: string; output: string; is_stderr: boolean }
+  | { type: 'file_update'; task_id: string; files: FileNode[] }
+  | { type: 'plan_update'; task_id: string; plan: TaskPlan }
+  | { type: 'completion'; task_id: string; result: TaskResult }
+  | { type: 'error'; task_id: string; error: string }
+  | { type: 'budget_update'; daily: number; monthly: number; cache_hit_rate: number }
+  | { type: 'connected'; client_id: string }
+  | { type: 'disconnected' };
+
+export interface AgentStatus {
+  role: string;
+  status: 'pending' | 'running' | 'completed' | 'error';
+  tokens_in: number;
+  tokens_out: number;
+  latency: number;
+  cost_usd: number;
+  progress: number; // 0-100
+  message?: string;
+}
+
+export interface UsageStats {
+  totalTokens: number;
+  totalCost: number;
+  requests: {
+    timestamp: number;
+    model: string;
+    inputTokens: number;
+    outputTokens: number;
+    cost: number;
+    latency: number;
+    status: 'ok' | 'error';
+  }[];
+}
