@@ -434,10 +434,10 @@ async def _run_osint(prompt: str, agent: dict) -> tuple[str, str]:
             _run_shell(f'curl -s "https://leakcheck.io/api/public?check={email}"', 15)))
         # Holehe (account discovery, strip progress bars)
         tasks.append((f"ACCOUNT DISCOVERY: {email}",
-            _run_shell(f'PATH={PATH} holehe --only-used --no-color {email} 2>&1 | grep -E "^\[\+\]|^\*|websites checked" | head -30', 45)))
+            _run_shell(r'PATH=%s holehe --only-used --no-color %s 2>&1 | grep -E "^\[\+\]|^\*|websites checked" | head -30' % (PATH, email), 45)))
         # Maigret username search (parallel, strip progress bars)
         tasks.append((f"USERNAME SEARCH: {username}",
-            _run_shell(f'PATH={PATH} timeout 30 maigret {username} --timeout 8 --no-color --print-found 2>&1 | grep -E "^\[\+\]" | head -25', 35)))
+            _run_shell(r'PATH=%s timeout 30 maigret %s --timeout 8 --no-color --print-found 2>&1 | grep -E "^\[\+\]" | head -25' % (PATH, username), 35)))
 
     for ip in ips[:3]:
         # ip-api (full geolocation)
