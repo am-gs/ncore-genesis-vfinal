@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { ManusTerminal } from "@/components/manus/Terminal";
-import { fetchTasks } from "@/lib/api";
+import { fetchTasks, getTerminalWSUrl } from "@/lib/api";
 import type { Task } from "@/types";
 import { StatusDot } from "@/components/ui/StatusDot";
 import { Terminal as TerminalIcon, ChevronDown } from "lucide-react";
@@ -78,7 +78,7 @@ export default function TerminalPage() {
         {loading ? (
           <div className="h-full rounded-2xl border border-white/[0.06] bg-[#070a12] animate-pulse" />
         ) : selectedId ? (
-          <ManusTerminal taskId={selectedId} fullScreen />
+          <ManusTerminal taskId={selectedId} wsUrl={getTerminalWSUrl(selectedId)} fullScreen />
         ) : (
           <div className="h-full rounded-2xl border border-white/[0.06] bg-[rgba(15,23,42,0.55)] backdrop-blur-xl flex items-center justify-center">
             <div className="text-center">

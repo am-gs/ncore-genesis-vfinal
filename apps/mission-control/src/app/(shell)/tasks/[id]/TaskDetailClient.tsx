@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/Badge';
 import { StatusDot } from '@/components/ui/StatusDot';
 import {
   fetchTask, fetchTaskTree, pauseTask, resumeTask, retryTask, cancelTask,
-  spawnSubtask, branchTask, executeTask,
+  spawnSubtask, branchTask, executeTask, getTerminalWSUrl,
 } from '@/lib/api';
 import type { Task, PlanStep } from '@/types';
 import {
@@ -261,7 +261,7 @@ export default function TaskDetailClient() {
             <BrowserViewport taskId={task.id} />
           </div>
           <div className="lg:col-span-1 h-[520px]">
-            <ManusTerminal taskId={task.id} />
+            <ManusTerminal taskId={task.id} wsUrl={getTerminalWSUrl(task.id)} />
           </div>
         </motion.div>
       )}

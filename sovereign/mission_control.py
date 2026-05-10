@@ -280,7 +280,10 @@ def _decompose_plan_steps(parent_id: str, steps: List[dict], agent: str) -> List
 
 async def _run_manus(task_id: str) -> None:
     """Helper to launch a Manus orchestrator loop for a task."""
-    await manus_engine._run_manus(task_id)
+    try:
+        await manus_engine._run_manus(task_id)
+    finally:
+        _manus_orchs.pop(task_id, None)
 
 
 # ---------------------------------------------------------------------------
@@ -611,7 +614,7 @@ async def execute_task(task_id: str):
         _save_tasks()
     # Cancel any stale simulation for this task first.
     _stop_simulation(task_id)
-    asyncio.create_task(_run_manus(task_id))
+    _manus_orchs[task_id] = asyncio.create_task(_run_manus(task_id))
     _broadcast(task_id, {"status": "running", "agent": "manus"})
     return task
 
