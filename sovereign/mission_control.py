@@ -22,9 +22,11 @@ from pathlib import Path
 from typing import List, Optional
 
 import httpx
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, PlainTextResponse, StreamingResponse
+
+import manus_engine
 
 ROOT = Path('/home/ubuntu/sovereign')
 LOGS = ROOT / 'logs'
@@ -121,6 +123,7 @@ def new_task_dict(
 # In-memory store + persistence
 _tasks: dict[str, dict] = {}
 _simulation_tasks: dict[str, asyncio.Task] = {}
+_manus_orchs: dict[str, Any] = {}
 _lock = asyncio.Lock()
 _sse_queues: dict[str, asyncio.Queue] = {}
 
@@ -221,6 +224,10 @@ def _cascade_cancel(task_id: str) -> None:
     task["status"] = TaskState.CANCELLED
     task["updated_at"] = iso_now()
     _stop_simulation(task_id)
+    # Cancel any active Manus orchestrator for this task
+    orch = _manus_orchs.pop(task_id, None)
+    if orch:
+        orch.cancel()
     for sub_id in task.get("subtasks", []):
         _cascade_cancel(sub_id)
 
@@ -269,6 +276,11 @@ def _decompose_plan_steps(parent_id: str, steps: List[dict], agent: str) -> List
         _tasks[child["id"]] = child
         sub_ids.append(child["id"])
     return sub_ids
+
+
+async def _run_manus(task_id: str) -> None:
+    """Helper to launch a Manus orchestrator loop for a task."""
+    await manus_engine._run_manus(task_id)
 
 
 # ---------------------------------------------------------------------------
@@ -581,6 +593,116 @@ async def get_trajectory(task_id: str):
         _resolve_task(task_id)
         branches = _get_branches(task_id)
         return {"task_id": task_id, "branches": branches}
+
+
+# ---------------------------------------------------------------------------
+# Manus autonomous execution endpoints
+# ---------------------------------------------------------------------------
+
+@app.post("/api/tasks/{task_id}/execute")
+async def execute_task(task_id: str):
+    """Start Manus autonomous execution on a task."""
+    async with _lock:
+        task = _resolve_task(task_id)
+        if task["status"] != TaskState.PLANNING:
+            raise HTTPException(400, "task must be in planning state")
+        task["status"] = TaskState.RUNNING
+        task["updated_at"] = iso_now()
+        _save_tasks()
+    # Cancel any stale simulation for this task first.
+    _stop_simulation(task_id)
+    asyncio.create_task(_run_manus(task_id))
+    _broadcast(task_id, {"status": "running", "agent": "manus"})
+    return task
+
+
+@app.get("/api/tasks/{task_id}/screenshots")
+async def get_screenshots(task_id: str):
+    """Return list of screenshot paths/base64 for a task."""
+    async with _lock:
+        _resolve_task(task_id)
+    shots = manus_engine._list_screenshots(task_id)
+    return {"task_id": task_id, "screenshots": shots}
+
+
+@app.post("/api/tasks/{task_id}/terminal")
+async def terminal_command(task_id: str, body: dict):
+    """Execute a one-off terminal command for a task."""
+    async with _lock:
+        _resolve_task(task_id)
+    command = body.get("command", "")
+    timeout = body.get("timeout", 30)
+    if not command:
+        raise HTTPException(400, "command is required")
+    output = await manus_engine._manus_terminal_command(task_id, command, timeout=int(timeout))
+    _broadcast(task_id, {"type": "terminal", "output": output})
+    return {"task_id": task_id, "output": output}
+
+
+@app.get("/api/tasks/{task_id}/artifacts")
+async def get_artifacts(task_id: str):
+    """List artifact files under /tmp/manus/{task_id}."""
+    async with _lock:
+        _resolve_task(task_id)
+    return {"task_id": task_id, "artifacts": manus_engine._get_artifacts(task_id)}
+
+
+# ---------------------------------------------------------------------------
+# WebSocket interactive terminal
+# ---------------------------------------------------------------------------
+
+@app.websocket("/ws/terminal/{task_id}")
+async def terminal_ws(websocket: WebSocket, task_id: str):
+    await websocket.accept()
+    proc: Optional[asyncio.subprocess.Process] = None
+    try:
+        proc = await asyncio.create_subprocess_shell(
+            "/bin/bash",
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+
+        async def _reader():
+            if proc.stdout is None:
+                return
+            while True:
+                try:
+                    line = await asyncio.wait_for(proc.stdout.readline(), timeout=0.5)
+                except asyncio.TimeoutError:
+                    continue
+                if not line:
+                    break
+                text = line.decode(errors="replace")
+                await websocket.send_text(json.dumps({"type": "terminal", "output": text}))
+
+        reader_task = asyncio.create_task(_reader())
+
+        while True:
+            data = await websocket.receive_text()
+            msg = json.loads(data)
+            if msg.get("type") == "input":
+                inp = msg.get("data", "")
+                if not inp.endswith("\n"):
+                    inp += "\n"
+                if proc.stdin is not None:
+                    proc.stdin.write(inp.encode())
+                    await proc.stdin.drain()
+            elif msg.get("type") == "resize":
+                pass
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        if proc and proc.returncode is None:
+            proc.kill()
+            await proc.wait()
+        reader_task.cancel()
+        try:
+            await reader_task
+        except asyncio.CancelledError:
+            pass
 
 
 HTML = r"""

@@ -1,4 +1,4 @@
-import type { HealthResponse, RunsResponse, RestartResponse, Task, PlanStep, Artifact } from '@/types';
+import type { HealthResponse, RunsResponse, RestartResponse, Task, PlanStep, Artifact, Screenshot } from '@/types';
 
 const BASE = typeof window !== 'undefined' ? (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:3004') : '';
 
@@ -99,4 +99,41 @@ export async function cancelTask(id: string): Promise<Task> {
   const r = await fetch(`${BASE}/api/tasks/${id}/cancel`, { method: 'POST', cache: 'no-store' });
   if (!r.ok) throw new Error(`Cancel ${r.status}`);
   return r.json();
+}
+
+/* ── Manus autonomous execution API ── */
+
+export async function executeTask(id: string): Promise<Task> {
+  const r = await fetch(`${BASE}/api/tasks/${id}/execute`, { method: 'POST', cache: 'no-store' });
+  if (!r.ok) throw new Error(`Execute ${r.status}`);
+  return r.json();
+}
+
+export async function getScreenshots(id: string): Promise<{ task_id: string; screenshots: Screenshot[] }> {
+  const r = await fetch(`${BASE}/api/tasks/${id}/screenshots`, { cache: 'no-store' });
+  if (!r.ok) throw new Error(`Screenshots ${r.status}`);
+  return r.json();
+}
+
+export async function sendTerminalCommand(id: string, command: string, timeout = 30): Promise<{ task_id: string; output: string }> {
+  const r = await fetch(`${BASE}/api/tasks/${id}/terminal`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ command, timeout }),
+    cache: 'no-store',
+  });
+  if (!r.ok) throw new Error(`Terminal ${r.status}`);
+  return r.json();
+}
+
+export async function getArtifacts(id: string): Promise<{ task_id: string; artifacts: Artifact[] }> {
+  const r = await fetch(`${BASE}/api/tasks/${id}/artifacts`, { cache: 'no-store' });
+  if (!r.ok) throw new Error(`Artifacts ${r.status}`);
+  return r.json();
+}
+
+export function connectTerminalWS(id: string): WebSocket {
+  const protocol = typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const host = typeof window !== 'undefined' ? window.location.host : '127.0.0.1:3004';
+  return new WebSocket(`${protocol}//${host}/ws/terminal/${id}`);
 }
