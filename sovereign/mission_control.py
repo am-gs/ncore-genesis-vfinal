@@ -656,7 +656,7 @@ async def terminal_ws(websocket: WebSocket, task_id: str):
     await websocket.accept()
     proc: Optional[asyncio.subprocess.Process] = None
     try:
-        proc = await asyncio.create_subprocess_shell(
+        proc = await asyncio.create_subprocess_exec(
             "/bin/bash",
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,

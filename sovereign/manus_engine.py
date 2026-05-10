@@ -37,7 +37,7 @@ def _iso_now() -> str:
 
 
 def _artifact_dir(task_id: str) -> Path:
-    d = Path(f"/tmp/manus/{task_id}")
+    d = Path("/tmp/manus") / task_id
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -239,8 +239,10 @@ class ManusOrchestrator:
         return str(path)
 
     async def terminal_execute(self, command: str, timeout: int = 30) -> str:
-        proc = await asyncio.create_subprocess_shell(
-            command,
+        # Use exec with /bin/sh -c to avoid shell-injection via IFS/PATH while
+        # preserving pipes and redirections for LLM-generated commands.
+        proc = await asyncio.create_subprocess_exec(
+            "/bin/sh", "-c", command,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
         )
