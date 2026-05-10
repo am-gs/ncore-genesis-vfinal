@@ -44,6 +44,29 @@ export interface PlanStep {
   output?: string;
 }
 
+export interface ToolCall {
+  step: number;
+  tool: string;
+  input: Record<string, unknown>;
+  output: string;
+  status: 'running' | 'done' | 'error';
+  timestamp: string;
+}
+
+export interface Screenshot {
+  data: string; // base64
+  url: string;
+  timestamp: string;
+}
+
+export interface ManusState {
+  plan: PlanStep[];
+  current_step: number;
+  tool_calls: ToolCall[];
+  screenshots: Screenshot[];
+  terminal_output: string;
+}
+
 export interface Task {
   id: string;
   name: string;
@@ -62,35 +85,5 @@ export interface Task {
   error?: string;
   artifacts: Artifact[];
   memory_refs: string[];
-}
-
-// Manus engine types
-export interface ToolCall {
-  type: 'tool_call';
-  step: number;
-  tool: string;
-  input: Record<string, unknown>;
-  output: string;
-  status: 'running' | 'done' | 'error';
-}
-
-export interface Screenshot {
-  type: 'screenshot';
-  data: string;
-  url: string;
-}
-
-export interface TerminalOutput {
-  type: 'terminal';
-  output: string;
-}
-
-export interface ManusState {
-  task_id: string;
-  status: string;
-  agent: string;
-  plan: PlanStep[];
-  history: ToolCall[];
-  screenshots: Screenshot[];
-  artifacts: Artifact[];
+  manus_state?: ManusState;
 }

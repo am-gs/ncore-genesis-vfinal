@@ -109,7 +109,7 @@ export async function executeTask(id: string): Promise<Task> {
   return r.json();
 }
 
-export async function getScreenshots(id: string): Promise<{ task_id: string; screenshots: Screenshot[] }> {
+export async function getScreenshots(id: string): Promise<{ task_id: string; screenshots: Screenshot[]; current_url?: string }> {
   const r = await fetch(`${BASE}/api/tasks/${id}/screenshots`, { cache: 'no-store' });
   if (!r.ok) throw new Error(`Screenshots ${r.status}`);
   return r.json();
