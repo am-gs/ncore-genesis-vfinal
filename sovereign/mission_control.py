@@ -35,13 +35,8 @@ TASKS_FILE = ROOT / 'tasks.json'
 app = FastAPI(title='Sovereign Mission Control')
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        'http://localhost:3000',
-        'http://127.0.0.1:3000',
-        'http://localhost:3002',
-        'http://127.0.0.1:3002',
-    ],
-    allow_credentials=True,
+    allow_origins=['*'],
+    allow_credentials=False,
     allow_methods=['*'],
     allow_headers=['*'],
 )
@@ -616,6 +611,26 @@ async def execute_task(task_id: str):
     _stop_simulation(task_id)
     _manus_orchs[task_id] = asyncio.create_task(_run_manus(task_id))
     _broadcast(task_id, {"status": "running", "agent": "manus"})
+    return task
+
+
+@app.post("/api/tasks/{task_id}/execute-langgraph")
+async def execute_langgraph_task(task_id: str):
+    """Start LangGraph autonomous execution on a task."""
+    from langchain_agent import run_langgraph_task
+
+    async with _lock:
+        task = _resolve_task(task_id)
+        if task["status"] != TaskState.PLANNING:
+            raise HTTPException(400, "task must be in planning state")
+        task["status"] = TaskState.RUNNING
+        task["updated_at"] = iso_now()
+        _save_tasks()
+    _stop_simulation(task_id)
+    _manus_orchs[task_id] = asyncio.create_task(
+        run_langgraph_task(task_id, task.get("description", ""))
+    )
+    _broadcast(task_id, {"status": "running", "agent": "langgraph"})
     return task
 
 
