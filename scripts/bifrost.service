@@ -1,0 +1,14 @@
+[Unit]
+Description=Sovereign Bifrost LLM Proxy
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/ncore-genesis-vfinal
+ExecStart=/usr/bin/python3 -m uvicorn sovereign.bifrost_proxy:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

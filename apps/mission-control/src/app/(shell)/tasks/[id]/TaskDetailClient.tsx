@@ -9,13 +9,17 @@ import { Badge } from '@/components/ui/Badge';
 import { StatusDot } from '@/components/ui/StatusDot';
 import {
   fetchTask, fetchTaskTree, pauseTask, resumeTask, retryTask, cancelTask,
-  spawnSubtask, branchTask,
+  spawnSubtask, branchTask, executeTask,
 } from '@/lib/api';
 import type { Task, PlanStep } from '@/types';
 import {
   ArrowLeft, GitBranch, Play, Pause, RotateCcw, Trash2, Plus,
   Sparkles, Clock, Cpu, FileText, AlertTriangle, X, ChevronRight, FolderTree,
+  Rocket,
 } from 'lucide-react';
+import { ManusTerminal } from '@/components/manus/Terminal';
+import { BrowserViewport } from '@/components/manus/BrowserViewport';
+import { ExecutionStream } from '@/components/manus/ExecutionStream';
 
 function statusColor(s: Task['status']) {
   switch (s) {
@@ -52,6 +56,7 @@ export default function TaskDetailClient() {
   const [branchOpen, setBranchOpen] = useState(false);
   const [spawnForm, setSpawnForm] = useState({ name: '', description: '', agent: 'research-agent' });
   const [branchForm, setBranchForm] = useState({ name: '', description: '' });
+  const [executing, setExecuting] = useState(false);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -88,6 +93,19 @@ export default function TaskDetailClient() {
       toast.success(`Task ${action}d`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : `${action} failed`);
+    }
+  };
+
+  const handleExecute = async () => {
+    setExecuting(true);
+    try {
+      const t = await executeTask(id);
+      setTask(t);
+      toast.success('Manus execution started');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Execute failed');
+    } finally {
+      setExecuting(false);
     }
   };
 
@@ -136,6 +154,8 @@ export default function TaskDetailClient() {
       <div className="text-sm text-muted">Task not found</div>
     </div>
   );
+
+  const showManusUI = task.status === 'running' || task.status === 'planning' || task.status === 'paused' || task.manus_state;
 
   return (
     <div className="space-y-6">
@@ -196,7 +216,7 @@ export default function TaskDetailClient() {
         </Card>
       </div>
 
-      <div className="flex gap-2 flex-wrap">
+      <div className="flex gap-2 flex-wrap items-center">
         {task.status === 'running' && (
           <button onClick={() => handleAction('pause')} className="flex items-center gap-2 rounded-xl bg-amber-500/10 border border-amber-500/20 px-4 py-2 text-xs font-medium text-amber-400 hover:bg-amber-500/20 transition-all"><Pause className="h-3.5 w-3.5" /> Pause</button>
         )}
@@ -211,12 +231,39 @@ export default function TaskDetailClient() {
         )}
         <button onClick={() => setSpawnOpen(true)} className="flex items-center gap-2 rounded-xl bg-white/[0.04] border border-white/[0.06] px-4 py-2 text-xs font-medium text-muted hover:text-text hover:bg-white/[0.06] transition-all"><Plus className="h-3.5 w-3.5" /> Spawn Subtask</button>
         <button onClick={() => setBranchOpen(true)} className="flex items-center gap-2 rounded-xl bg-white/[0.04] border border-white/[0.06] px-4 py-2 text-xs font-medium text-muted hover:text-text hover:bg-white/[0.06] transition-all"><GitBranch className="h-3.5 w-3.5" /> Branch</button>
+        <button
+          onClick={handleExecute}
+          disabled={executing || task.status === 'running' || task.status === 'completed'}
+          className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 px-4 py-2 text-xs font-medium text-white shadow-lg shadow-violet-500/20 hover:shadow-violet-500/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed ml-auto"
+        >
+          <Rocket className="h-3.5 w-3.5" /> {executing ? 'Starting…' : '▶ Execute with Manus'}
+        </button>
       </div>
 
       {task.error && (
         <div className="rounded-xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-xs text-rose-300 backdrop-blur-md">
           <div className="flex items-center gap-2"><AlertTriangle className="h-3.5 w-3.5" />{task.error}</div>
         </div>
+      )}
+
+      {/* Manus Execution UI */}
+      {showManusUI && (
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4 }}
+          className="grid grid-cols-1 lg:grid-cols-3 gap-4"
+        >
+          <div className="lg:col-span-1 h-[520px]">
+            <ExecutionStream taskId={task.id} />
+          </div>
+          <div className="lg:col-span-1 h-[520px]">
+            <BrowserViewport taskId={task.id} />
+          </div>
+          <div className="lg:col-span-1 h-[520px]">
+            <ManusTerminal taskId={task.id} />
+          </div>
+        </motion.div>
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

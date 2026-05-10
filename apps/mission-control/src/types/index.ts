@@ -44,6 +44,29 @@ export interface PlanStep {
   output?: string;
 }
 
+export interface ToolCall {
+  step: number;
+  tool: string;
+  input: Record<string, unknown>;
+  output: string;
+  status: 'running' | 'done' | 'error';
+  timestamp: string;
+}
+
+export interface Screenshot {
+  data: string; // base64
+  url: string;
+  timestamp: string;
+}
+
+export interface ManusState {
+  plan: PlanStep[];
+  current_step: number;
+  tool_calls: ToolCall[];
+  screenshots: Screenshot[];
+  terminal_output: string;
+}
+
 export interface Task {
   id: string;
   name: string;
@@ -62,4 +85,5 @@ export interface Task {
   error?: string;
   artifacts: Artifact[];
   memory_refs: string[];
+  manus_state?: ManusState;
 }

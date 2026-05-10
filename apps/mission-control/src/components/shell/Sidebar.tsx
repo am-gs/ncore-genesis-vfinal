@@ -5,13 +5,15 @@ import { useAppStore } from '@/stores/app-store';
 import {
   LayoutDashboard, Activity, Table, ScrollText, Shield, Bot, Brain,
   GitBranch, Settings, ChevronLeft, ChevronRight, Zap, Code, Workflow,
-  Cpu
+  Cpu, Terminal, Globe
 } from 'lucide-react';
 
 const items = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/tasks/', label: 'Tasks', icon: GitBranch },
   { href: '/deep-agents/', label: 'Deep Agents', icon: Cpu },
+  { href: '/terminal/', label: 'Terminal', icon: Terminal },
+  { href: '/browser/', label: 'Browser', icon: Globe },
   { href: '/workspace/', label: 'Workspace', icon: Code },
   { href: '/services/', label: 'Services', icon: Activity },
   { href: '/runs/', label: 'Runs', icon: Table },

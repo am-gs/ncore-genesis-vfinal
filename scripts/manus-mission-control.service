@@ -1,0 +1,19 @@
+[Unit]
+Description=Sovereign Mission Control with Manus
+After=network.target docker.service
+Wants=docker.service
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/sovereign
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+Environment=PYTHONPATH=/home/ubuntu/ncore-genesis-vfinal
+ExecStartPre=/bin/bash -c 'cd /home/ubuntu/ncore-genesis-vfinal && git pull origin main || true'
+ExecStartPre=/bin/bash -c 'cd /home/ubuntu/ncore-genesis-vfinal/apps/mission-control && pnpm install && pnpm build'
+ExecStart=/usr/bin/python3 -m uvicorn sovereign.mission_control:app --host 127.0.0.1 --port 3004 --reload
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
