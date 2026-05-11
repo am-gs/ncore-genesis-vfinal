@@ -3,8 +3,7 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono, Libre_Baskerville } from "next/font/google";
 import "./globals.css";
-import { WebSocketProvider } from "@/app/contexts/websocket";
-import MainLayout from "@/app/components/main-layout";
+import ClientLayout from "@/app/client-layout";
 
 const inter = Inter({ variable: "--font-inter", subsets: ["latin"], weight: ["300","400","500","600","700"] });
 const jetbrains = JetBrains_Mono({ variable: "--font-jetbrains", subsets: ["latin"], weight: ["400","500"] });
@@ -24,11 +23,9 @@ export default function RootLayout({
     <html lang="en" className={`${inter.variable} ${jetbrains.variable} ${libre.variable}`}>
       <body className="h-screen overflow-hidden bg-bg text-text font-sans antialiased">
         <div className="ambient-bg" />
-        <WebSocketProvider>
-          <MainLayout>
-            {children}
-          </MainLayout>
-        </WebSocketProvider>
+        <ClientLayout>
+          {children}
+        </ClientLayout>
       </body>
     </html>
   );
