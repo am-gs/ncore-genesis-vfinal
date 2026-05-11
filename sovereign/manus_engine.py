@@ -77,7 +77,7 @@ def _new_task_dict(*args, **kwargs) -> dict:
 # LLM helpers via Bifrost
 # ---------------------------------------------------------------------------
 
-async def _chat(messages: List[dict], model: str = "qwen3-8b:latest", max_tokens: int = 900, timeout: float = 180) -> str:
+async def _chat(messages: List[dict], model: str = "ncore-fast-uncensored:latest", max_tokens: int = 256, timeout: float = 60) -> str:
     payload = {
         "model": model,
         "messages": messages,
@@ -85,7 +85,13 @@ async def _chat(messages: List[dict], model: str = "qwen3-8b:latest", max_tokens
         "temperature": 0.3,
     }
     async with httpx.AsyncClient(timeout=timeout) as client:
-        r = await client.post(BIFROST_URL, json=payload, headers={"content-type": "application/json"})
+        try:
+            r = await asyncio.wait_for(
+                client.post(BIFROST_URL, json=payload, headers={"content-type": "application/json"}),
+                timeout=timeout,
+            )
+        except asyncio.TimeoutError:
+            raise asyncio.TimeoutError(f"LLM inference timed out after {timeout}s")
     if r.status_code >= 400:
         raise RuntimeError(f"Bifrost error {r.status_code}: {r.text}")
     data = r.json()
@@ -104,7 +110,7 @@ async def _generate_plan(task_description: str) -> List[dict]:
     )
     user = f"Task: {task_description}\n\nPlan:"
     messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
-    raw = await _chat(messages, max_tokens=900)
+    raw = await _chat(messages, max_tokens=256, timeout=60)
     cleaned = raw.strip().strip("`").strip()
     if cleaned.startswith("json"):
         cleaned = cleaned[4:].strip()
@@ -131,7 +137,7 @@ async def _decide_next_action(task_description: str, history: List[dict]) -> dic
     )
     user = f"Task: {task_description}\n\nHistory: {json.dumps(history, default=str)}\n\nDecision:"
     messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
-    raw = await _chat(messages, max_tokens=400)
+    raw = await _chat(messages, max_tokens=128, timeout=60)
     cleaned = raw.strip().strip("`").strip()
     if cleaned.startswith("json"):
         cleaned = cleaned[4:].strip()

@@ -607,9 +607,32 @@ async def execute_task(task_id: str):
         task["status"] = TaskState.RUNNING
         task["updated_at"] = iso_now()
         _save_tasks()
-    # Cancel any stale simulation for this task first.
+    async def _guard():
+        try:
+            await asyncio.wait_for(_run_manus(task_id), timeout=600)
+        except asyncio.TimeoutError:
+            async with _lock:
+                t = _tasks.get(task_id)
+                if t:
+                    t["status"] = TaskState.FAILED
+                    t["error"] = "Task execution timed out after 600s"
+                    t["updated_at"] = iso_now()
+                    _save_tasks()
+            _broadcast(task_id, {"status": "failed", "error": "Task execution timed out after 600s"})
+        except Exception as exc:
+            async with _lock:
+                t = _tasks.get(task_id)
+                if t:
+                    t["status"] = TaskState.FAILED
+                    t["error"] = str(exc)
+                    t["updated_at"] = iso_now()
+                    _save_tasks()
+            _broadcast(task_id, {"status": "failed", "error": str(exc)})
+        finally:
+            _manus_orchs.pop(task_id, None)
+
     _stop_simulation(task_id)
-    _manus_orchs[task_id] = asyncio.create_task(_run_manus(task_id))
+    _manus_orchs[task_id] = asyncio.create_task(_guard())
     _broadcast(task_id, {"status": "running", "agent": "manus"})
     return task
 
@@ -626,10 +649,36 @@ async def execute_langgraph_task(task_id: str):
         task["status"] = TaskState.RUNNING
         task["updated_at"] = iso_now()
         _save_tasks()
+
+    async def _guard():
+        try:
+            await asyncio.wait_for(
+                run_langgraph_task(task_id, task.get("description", "")),
+                timeout=600,
+            )
+        except asyncio.TimeoutError:
+            async with _lock:
+                t = _tasks.get(task_id)
+                if t:
+                    t["status"] = TaskState.FAILED
+                    t["error"] = "Task execution timed out after 600s"
+                    t["updated_at"] = iso_now()
+                    _save_tasks()
+            _broadcast(task_id, {"status": "failed", "error": "Task execution timed out after 600s"})
+        except Exception as exc:
+            async with _lock:
+                t = _tasks.get(task_id)
+                if t:
+                    t["status"] = TaskState.FAILED
+                    t["error"] = str(exc)
+                    t["updated_at"] = iso_now()
+                    _save_tasks()
+            _broadcast(task_id, {"status": "failed", "error": str(exc)})
+        finally:
+            _manus_orchs.pop(task_id, None)
+
     _stop_simulation(task_id)
-    _manus_orchs[task_id] = asyncio.create_task(
-        run_langgraph_task(task_id, task.get("description", ""))
-    )
+    _manus_orchs[task_id] = asyncio.create_task(_guard())
     _broadcast(task_id, {"status": "running", "agent": "langgraph"})
     return task
 
