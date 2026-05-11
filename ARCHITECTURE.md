@@ -52,7 +52,7 @@
 
 | Tier | Model | Provider | Cost | Use Case |
 |---|---|---|---|---|
-| T0 LOCAL | Dark Champion V2 21B + Qwen3.5 abliterated | Ollama | $0 | Critic, uncensored fallback |
+| T0 LOCAL | Bifrost v2 → OpenRouter free tier | Bifrost | $0 | Critic, uncensored fallback via external GPU providers |
 | T1 FAST | openai/gpt-oss-20b:free | OpenRouter | $0 | Trivial tasks — matches o3-mini, 13 providers |
 | T2 FREE_CODER | qwen3-coder-480b:free | OpenRouter | $0 | Code tasks, complexity < 6 |
 | T3 FREE_REASONING | deepseek/deepseek-r1:free | OpenRouter | $0 | Reasoning, complexity 4-7 |
@@ -60,7 +60,7 @@
 | T5 OPUS | anthropic/claude-opus-4.6 | OpenRouter | $5/$25/M | Budget-gated, complexity ≥ 8 only |
 | GPU | Wan 2.2 / Flux / vLLM | Vast.ai | $0.30-1.80/hr | Video, image, heavy inference |
 
-~90% of tasks route to $0 infrastructure. Paid tiers only activate for genuine complexity.
+~90% of tasks route to $0 infrastructure via external GPU providers (Groq, Cerebras, OpenRouter free tier). Paid tiers only activate for genuine complexity. All LLM calls flow: Consumer → Bifrost v2 (port 8000) → ProviderRouter → External GPU Provider.
 
 ---
 

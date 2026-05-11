@@ -77,7 +77,7 @@ def _new_task_dict(*args, **kwargs) -> dict:
 # LLM helpers via Bifrost
 # ---------------------------------------------------------------------------
 
-async def _chat(messages: List[dict], model: str = "llama-3.3-70b", max_tokens: int = 900, timeout: float = 30) -> str:
+async def _chat(messages: List[dict], model: str = "qwen3-8b:latest", max_tokens: int = 900, timeout: float = 180) -> str:
     payload = {
         "model": model,
         "messages": messages,

@@ -1,13 +1,13 @@
 """NCore Genesis — Task Decomposer v7.6
 Analyzes complex prompts and decomposes them into executable sub-tasks.
-Uses local Ollama model for analysis (zero cost).
+Uses external GPU providers via Bifrost for analysis.
 """
 import os, json, re, asyncio, httpx, structlog
 from pathlib import Path
 
 log = structlog.get_logger()
 
-OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
+BIFROST_URL = os.environ.get("BIFROST_URL", "http://localhost:8000")
 
 
 class TaskDecomposer:

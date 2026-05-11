@@ -1,3 +1,10 @@
+"""Sovereign Bifrost Proxy v2 — Pure control plane, zero Ollama dependency.
+
+Multi-provider external inference router with policy enforcement,
+call logging, and health/metrics endpoints.
+"""
+from __future__ import annotations
+
 import json
 import os
 import sqlite3
@@ -5,17 +12,22 @@ import time
 from typing import Any
 
 import httpx
+import structlog
 from fastapi import FastAPI, Request, Response
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 
-OLLAMA = os.environ.get("SOVEREIGN_OLLAMA_URL", "http://127.0.0.1:11434")
+from core.provider_router import (
+    DEFAULT_FALLBACK_CHAIN,
+    FREE_FALLBACK_CHAIN,
+    PROVIDERS,
+    PROVIDER_MODELS,
+    ProviderRouter,
+    _has_api_key,
+)
+
 DB = os.environ.get("SOVEREIGN_BUDGET_DB", "/home/ubuntu/sovereign/bifrost/budget.sqlite3")
 MONTHLY_CAP = float(os.environ.get("SOVEREIGN_MONTHLY_CAP", "38.0"))
-REMOTE_BASE_URL = os.environ.get("SOVEREIGN_REMOTE_BASE_URL", "").rstrip("/")
-REMOTE_API_KEY = os.environ.get("SOVEREIGN_REMOTE_API_KEY", "")
-REMOTE_MODEL = os.environ.get("SOVEREIGN_REMOTE_MODEL", "")
 
-LOCAL_CHAIN = ["qwen3-8b:latest", "dolphin-mistral-7b:latest"]
 SOFT_REFUSAL_PATTERNS = [
     "i cannot", "i can't", "i am unable", "i'm unable", "unable to assist",
     "i don't feel comfortable", "against my guidelines", "must decline",
@@ -31,7 +43,17 @@ DUAL_USE_AUTH_PATTERNS = [
     "exploit this ip", "hack this", "unauthorized", "bypass detection", "exfiltrate",
 ]
 
-app = FastAPI(title="Sovereign Bifrost Shim")
+structlog.configure(
+    processors=[
+        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.stdlib.add_log_level,
+        structlog.processors.JSONRenderer(),
+    ]
+)
+log = structlog.get_logger()
+
+app = FastAPI(title="Sovereign Bifrost Shim v2")
+router = ProviderRouter(fallback_chain=DEFAULT_FALLBACK_CHAIN)
 
 
 def conn() -> sqlite3.Connection:
@@ -48,25 +70,23 @@ def conn() -> sqlite3.Connection:
           fallback_reason text,
           latency_ms integer,
           completion_status text,
-          refusal_intercepted integer
+          refusal_intercepted integer,
+          tokens_in integer default 0,
+          tokens_out integer default 0,
+          cost_usd real default 0.0
         )
         """
     )
-    required_columns = {
-        "ts": "real",
-        "task_id": "text",
-        "requested_model": "text",
-        "provider": "text",
-        "model": "text",
-        "fallback_reason": "text",
-        "latency_ms": "integer",
-        "completion_status": "text",
-        "refusal_intercepted": "integer",
+    # Migrate missing columns from v1 schema
+    existing = {row[1] for row in c.execute("pragma table_info(calls)").fetchall()}
+    migrations = {
+        "tokens_in": "integer default 0",
+        "tokens_out": "integer default 0",
+        "cost_usd": "real default 0.0",
     }
-    existing_columns = {row[1] for row in c.execute("pragma table_info(calls)").fetchall()}
-    for name, column_type in required_columns.items():
-        if name not in existing_columns:
-            c.execute(f"alter table calls add column {name} {column_type}")
+    for col, ctype in migrations.items():
+        if col not in existing:
+            c.execute(f"alter table calls add column {col} {ctype}")
     c.commit()
     return c
 
@@ -77,7 +97,9 @@ def text_from_messages(payload: dict[str, Any]) -> str:
         if isinstance(message, dict):
             content = message.get("content", "")
             if isinstance(content, list):
-                content = " ".join(str(p.get("text", p)) if isinstance(p, dict) else str(p) for p in content)
+                content = " ".join(
+                    str(p.get("text", p)) if isinstance(p, dict) else str(p) for p in content
+                )
             parts.append(str(content))
     return "\n".join(parts)
 
@@ -93,7 +115,19 @@ def hard_stop(text: str) -> bool:
 
 def needs_authorization(text: str) -> bool:
     lower = text.lower()
-    if any(ok in lower for ok in ["authorized", "owned", "lab", "ctf", "sandbox", "tabletop", "simulation", "defensive"]):
+    if any(
+        ok in lower
+        for ok in [
+            "authorized",
+            "owned",
+            "lab",
+            "ctf",
+            "sandbox",
+            "tabletop",
+            "simulation",
+            "defensive",
+        ]
+    ):
         return False
     return contains_any(text, DUAL_USE_AUTH_PATTERNS)
 
@@ -104,102 +138,63 @@ def soft_refusal(text: str) -> bool:
 
 def exact_or_structured_request(text: str) -> bool:
     lower = text.lower()
-    return any(p in lower for p in ["reply exactly", "return exactly", "valid json", "json schema", "only the number"])
+    return any(
+        p in lower
+        for p in [
+            "reply exactly",
+            "return exactly",
+            "valid json",
+            "json schema",
+            "only the number",
+        ]
+    )
 
 
-def clean_exact_text(text: str) -> str:
-    return text.strip().strip("`").strip()
-
-
-def local_model_for(requested: str | None, fallback_index: int = 0) -> str:
-    if requested in ("dolphin-mistral-7b", "dolphin-mistral-7b:latest"):
-        return "dolphin-mistral-7b:latest"
-    if requested in ("qwen3-8b", "qwen3-8b:latest", "claude-haiku-4-5", "gpt-4o-mini", None, ""):
-        return LOCAL_CHAIN[min(fallback_index, len(LOCAL_CHAIN) - 1)]
-    return requested or LOCAL_CHAIN[min(fallback_index, len(LOCAL_CHAIN) - 1)]
-
-
-async def call_openai(base_url: str, payload: dict[str, Any], api_key: str = "sovereign", timeout: float = 180) -> tuple[int, dict[str, Any] | bytes]:
-    headers = {"content-type": "application/json", "authorization": f"Bearer {api_key}"}
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        r = await client.post(f"{base_url.rstrip('/')}/v1/chat/completions", json=payload, headers=headers)
-    try:
-        return r.status_code, r.json()
-    except Exception:
-        return r.status_code, r.content
-
-
-def choice_text(data: dict[str, Any] | bytes) -> str:
-    if not isinstance(data, dict):
-        return ""
-    return str((data.get("choices") or [{}])[0].get("message", {}).get("content", ""))
-
-
-def with_provider(data: dict[str, Any] | bytes, provider: str, model: str, fallback_reason: str) -> dict[str, Any] | bytes:
-    if isinstance(data, dict):
-        data["_bifrost_provider"] = provider
-        data["_bifrost_model"] = model
-        data["_bifrost_fallback_reason"] = fallback_reason
-    return data
-
-
-def log_call(task_id: str, requested_model: str, provider: str, model: str, fallback_reason: str, latency_ms: int, status: str, refusal: bool) -> None:
+def log_call(
+    task_id: str,
+    requested_model: str,
+    provider: str,
+    model: str,
+    fallback_reason: str,
+    latency_ms: int,
+    status: str,
+    refusal: bool,
+    tokens_in: int = 0,
+    tokens_out: int = 0,
+    cost_usd: float = 0.0,
+) -> None:
     c = conn()
     c.execute(
         """
         insert into calls (
           ts, task_id, requested_model, provider, model, fallback_reason,
-          latency_ms, completion_status, refusal_intercepted
-        ) values (?,?,?,?,?,?,?,?,?)
+          latency_ms, completion_status, refusal_intercepted,
+          tokens_in, tokens_out, cost_usd
+        ) values (?,?,?,?,?,?,?,?,?,?,?,?)
         """,
-        (time.time(), task_id, requested_model, provider, model, fallback_reason, latency_ms, status, 1 if refusal else 0),
+        (
+            time.time(),
+            task_id,
+            requested_model,
+            provider,
+            model,
+            fallback_reason,
+            latency_ms,
+            status,
+            1 if refusal else 0,
+            tokens_in,
+            tokens_out,
+            round(cost_usd, 8),
+        ),
     )
     c.commit()
     c.close()
 
 
-@app.get("/health")
-async def health():
-    try:
-        async with httpx.AsyncClient(timeout=3) as client:
-            r = await client.get(f"{OLLAMA}/v1/models")
-        if r.status_code >= 400:
-            raise RuntimeError(f"ollama returned {r.status_code}")
-    except Exception as e:
-        return JSONResponse({"status": "degraded", "ollama": "down", "error": str(e)}, status_code=503)
-    return {"status": "ok", "ollama": "ok", "monthly_cap_usd": MONTHLY_CAP, "local_chain": LOCAL_CHAIN, "remote_configured": bool(REMOTE_BASE_URL and REMOTE_API_KEY)}
+# ── OpenAI-compatible endpoints ─────────────────────────────────────
 
-
-@app.get("/metrics")
-async def metrics():
-    c = conn()
-    rows = c.execute("select count(*), coalesce(avg(latency_ms),0), coalesce(sum(refusal_intercepted),0) from calls").fetchone()
-    c.close()
-    total, avg_latency, refusals = rows
-    return PlainTextResponse(
-        f"sovereign_bifrost_calls_total {total}\n"
-        f"sovereign_bifrost_latency_ms_avg {avg_latency}\n"
-        f"sovereign_bifrost_refusal_intercepts_total {refusals}\n"
-        f"sovereign_bifrost_monthly_cap_usd {MONTHLY_CAP}\n"
-    )
-
-
-@app.get("/runs")
-async def runs(limit: int = 50):
-    c = conn()
-    c.row_factory = sqlite3.Row
-    rows = c.execute("select * from calls order by ts desc limit ?", (min(limit, 200),)).fetchall()
-    c.close()
-    return {"runs": [dict(row) for row in rows]}
-
-
-@app.api_route("/v1/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
-async def openai_proxy(path: str, request: Request):
-    if path != "chat/completions":
-        async with httpx.AsyncClient(timeout=60) as client:
-            r = await client.request(request.method, f"{OLLAMA}/v1/{path}", content=await request.body(), headers={"content-type": request.headers.get("content-type", "application/json")})
-        return Response(r.content, status_code=r.status_code, media_type=r.headers.get("content-type"))
-
+@app.post("/v1/chat/completions")
+async def chat_completions(request: Request):
     started = time.perf_counter()
     task_id = request.headers.get("x-task-id", "")
     payload = await request.json()
@@ -208,53 +203,295 @@ async def openai_proxy(path: str, request: Request):
 
     if hard_stop(text):
         content = "I can’t help create content involving minors/CSAM or bodily harm."
-        data = {"choices": [{"message": {"role": "assistant", "content": content}, "finish_reason": "stop", "index": 0}], "_bifrost_provider": "policy", "_bifrost_model": "none", "_bifrost_fallback_reason": "hard_stop"}
-        log_call(task_id, requested_model, "policy", "none", "hard_stop", int((time.perf_counter() - started) * 1000), "refused", False)
+        data = {
+            "choices": [
+                {
+                    "message": {"role": "assistant", "content": content},
+                    "finish_reason": "stop",
+                    "index": 0,
+                }
+            ],
+            "_bifrost_provider": "policy",
+            "_bifrost_model": "none",
+            "_bifrost_fallback_reason": "hard_stop",
+        }
+        log_call(
+            task_id,
+            requested_model,
+            "policy",
+            "none",
+            "hard_stop",
+            int((time.perf_counter() - started) * 1000),
+            "refused",
+            False,
+        )
         return JSONResponse(data)
 
     if needs_authorization(text):
         content = "What is the authorized scope, target owner, and lab/engagement boundary for this dual-use task?"
-        data = {"choices": [{"message": {"role": "assistant", "content": content}, "finish_reason": "stop", "index": 0}], "_bifrost_provider": "policy", "_bifrost_model": "none", "_bifrost_fallback_reason": "scope_required"}
-        log_call(task_id, requested_model, "policy", "none", "scope_required", int((time.perf_counter() - started) * 1000), "scope_required", False)
+        data = {
+            "choices": [
+                {
+                    "message": {"role": "assistant", "content": content},
+                    "finish_reason": "stop",
+                    "index": 0,
+                }
+            ],
+            "_bifrost_provider": "policy",
+            "_bifrost_model": "none",
+            "_bifrost_fallback_reason": "scope_required",
+        }
+        log_call(
+            task_id,
+            requested_model,
+            "policy",
+            "none",
+            "scope_required",
+            int((time.perf_counter() - started) * 1000),
+            "scope_required",
+            False,
+        )
         return JSONResponse(data)
 
+    stream = bool(payload.get("stream", False))
+    preferred = payload.get("provider") or request.headers.get("x-preferred-provider")
     fallback_reason = "none"
     refusal_intercepted = False
 
-    if REMOTE_BASE_URL and REMOTE_API_KEY and requested_model not in ("qwen3-8b", "qwen3-8b:latest", "dolphin-mistral-7b", "dolphin-mistral-7b:latest"):
-        remote_payload = dict(payload)
-        if REMOTE_MODEL:
-            remote_payload["model"] = REMOTE_MODEL
-        status, data = await call_openai(REMOTE_BASE_URL, remote_payload, REMOTE_API_KEY, timeout=60)
-        content = choice_text(data)
-        structured_bad = exact_or_structured_request(text) and not content.strip()
-        if status < 400 and not soft_refusal(content) and not structured_bad:
-            model = str(remote_payload.get("model", requested_model))
-            log_call(task_id, requested_model, "remote", model, "none", int((time.perf_counter() - started) * 1000), "completed", False)
-            return JSONResponse(with_provider(data, "remote", model, "none"), status_code=status)
-        fallback_reason = "remote_soft_refusal_or_failure"
-        refusal_intercepted = soft_refusal(content)
+    try:
+        if stream:
+            # Streaming: use ProviderRouter's stream wrapper
+            # We must collect the first chunk to detect soft refusal, then continue SSE
+            async def _stream():
+                collected = ""
+                async for chunk in router.stream_chat_completion(
+                    model=requested_model,
+                    messages=payload.get("messages", []),
+                    temperature=payload.get("temperature", 0.7),
+                    max_tokens=payload.get("max_tokens", 1024),
+                    preferred_provider=preferred,
+                ):
+                    delta = chunk.get("choices", [{}])[0].get("delta", {}).get("content", "")
+                    collected += delta
+                    chunk.setdefault("_bifrost_provider", chunk.get("provider", "external"))
+                    yield f"data: {json.dumps(chunk)}\n\n"
+                yield "data: [DONE]\n\n"
+                # Log after stream finishes
+                if soft_refusal(collected):
+                    log_call(
+                        task_id,
+                        requested_model,
+                        "external",
+                        requested_model,
+                        "stream_soft_refusal",
+                        int((time.perf_counter() - started) * 1000),
+                        "refused",
+                        True,
+                    )
+                else:
+                    log_call(
+                        task_id,
+                        requested_model,
+                        "external",
+                        requested_model,
+                        "none",
+                        int((time.perf_counter() - started) * 1000),
+                        "completed",
+                        False,
+                    )
 
-    last_data: dict[str, Any] | bytes = {}
-    last_status = 500
-    for i, model in enumerate([local_model_for(requested_model, 0), local_model_for("dolphin-mistral-7b", 1)]):
-        local_payload = dict(payload)
-        local_payload["model"] = model
-        if exact_or_structured_request(text):
-            local_payload["max_tokens"] = min(int(local_payload.get("max_tokens", 96) or 96), 128)
+            return StreamingResponse(_stream(), media_type="text/event-stream")
+
+        # Non-streaming
+        result = await router.chat_completion(
+            model=requested_model,
+            messages=payload.get("messages", []),
+            temperature=payload.get("temperature", 0.7),
+            max_tokens=payload.get("max_tokens", 1024),
+            preferred_provider=preferred,
+        )
+        content = result["content"]
+        if soft_refusal(content):
+            refusal_intercepted = True
+            fallback_reason = "soft_refusal"
+        log_call(
+            task_id,
+            requested_model,
+            result["provider"],
+            result["model"],
+            fallback_reason,
+            int(result["latency_ms"]),
+            "completed",
+            refusal_intercepted,
+            result["tokens_in"],
+            result["tokens_out"],
+            result["cost_usd"],
+        )
+        # Build OpenAI-compatible response
+        data = {
+            "id": f"chatcmpl-bifrost-{int(time.time()*1000)}",
+            "object": "chat.completion",
+            "created": int(time.time()),
+            "model": result["model"],
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": content},
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {
+                "prompt_tokens": result["tokens_in"],
+                "completion_tokens": result["tokens_out"],
+                "total_tokens": result["tokens_in"] + result["tokens_out"],
+            },
+            "_bifrost_provider": result["provider"],
+            "_bifrost_model": result["model"],
+            "_bifrost_fallback_reason": fallback_reason,
+            "_bifrost_latency_ms": result["latency_ms"],
+            "_bifrost_cost_usd": result["cost_usd"],
+        }
+        return JSONResponse(data)
+
+    except Exception as exc:
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        log.error("bifrost_proxy.error", error=str(exc), latency_ms=latency_ms)
+        log_call(task_id, requested_model, "error", "", str(exc), latency_ms, "error", False)
+        return JSONResponse(
+            {
+                "error": {
+                    "message": str(exc),
+                    "type": "internal_error",
+                }
+            },
+            status_code=503,
+        )
+
+
+@app.get("/v1/models")
+async def list_models():
+    available = router.get_available_providers()
+    models: list[dict[str, Any]] = []
+    for provider in available:
+        models.extend(PROVIDER_MODELS.get(provider, []))
+    return {"object": "list", "data": models}
+
+
+# ── Health, metrics, providers, benchmark, runs ─────────────────────
+
+@app.get("/health")
+async def health():
+    available = router.get_available_providers()
+    health_checks = await router.health_check_all()
+    latency_stats = {p: router.latency.get_stats(p) for p in PROVIDERS}
+    overall = "ok" if available else "degraded"
+    return {
+        "status": overall,
+        "available_providers": available,
+        "health_checks": health_checks,
+        "latency_stats": latency_stats,
+        "monthly_cap_usd": MONTHLY_CAP,
+        "fallback_chain": router.fallback_chain,
+        "free_mode": router.free_mode,
+    }
+
+
+@app.get("/metrics")
+async def metrics():
+    c = conn()
+    row = c.execute(
+        "select count(*), coalesce(avg(latency_ms),0), coalesce(sum(refusal_intercepted),0), coalesce(sum(cost_usd),0.0) from calls"
+    ).fetchone()
+    c.close()
+    total, avg_latency, refusals, total_cost = row
+    latency_lines = ""
+    for p in PROVIDERS:
+        stats = router.latency.get_stats(p)
+        latency_lines += (
+            f'sovereign_bifrost_latency_ms_p50{{provider="{p}"}} {stats["p50_ms"]:.2f}\n'
+            f'sovereign_bifrost_latency_ms_p95{{provider="{p}"}} {stats["p95_ms"]:.2f}\n'
+            f'sovereign_bifrost_error_rate{{provider="{p}"}} {stats["error_rate"]:.4f}\n'
+        )
+    return PlainTextResponse(
+        f"sovereign_bifrost_calls_total {total}\n"
+        f"sovereign_bifrost_latency_ms_avg {avg_latency:.2f}\n"
+        f"sovereign_bifrost_refusal_intercepts_total {refusals}\n"
+        f"sovereign_bifrost_monthly_cap_usd {MONTHLY_CAP}\n"
+        f"sovereign_bifrost_total_cost_usd {total_cost:.8f}\n"
+        f"{latency_lines}"
+    )
+
+
+@app.get("/providers")
+async def providers():
+    health_checks = await router.health_check_all()
+    out = []
+    for name, cfg in PROVIDERS.items():
+        out.append(
+            {
+                "name": name,
+                "base_url": cfg["base_url"],
+                "default_model": cfg["default_model"],
+                "priority": cfg["priority"],
+                "supports_streaming": cfg["supports_streaming"],
+                "configured": _has_api_key(name),
+                "health": health_checks.get(name, {}),
+            }
+        )
+    return {"providers": out}
+
+
+@app.get("/benchmark")
+async def benchmark():
+    available = router.get_available_providers()
+    results: dict[str, dict[str, Any]] = {}
+    prompt = "Count from 1 to 5"
+
+    async def _bench(provider: str) -> dict[str, Any]:
+        start = time.perf_counter()
+        try:
+            result = await router.chat_completion(
+                model=PROVIDERS[provider]["default_model"],
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.7,
+                max_tokens=32,
+                preferred_provider=provider,
+            )
+            latency = (time.perf_counter() - start) * 1000
+            return {
+                "status": "ok",
+                "latency_ms": round(latency, 2),
+                "provider_latency_ms": result["latency_ms"],
+                "tokens_out": result["tokens_out"],
+                "cost_usd": result["cost_usd"],
+            }
+        except Exception as exc:
+            latency = (time.perf_counter() - start) * 1000
+            return {"status": "error", "error": str(exc), "latency_ms": round(latency, 2)}
+
+    tasks = [_bench(p) for p in available]
+    raw = await asyncio.gather(*tasks, return_exceptions=True)
+    for p, r in zip(available, raw):
+        if isinstance(r, Exception):
+            results[p] = {"status": "error", "error": str(r)}
         else:
-            local_payload["max_tokens"] = int(local_payload.get("max_tokens", 900) or 900)
-        status, data = await call_openai(OLLAMA, local_payload, "sovereign", timeout=180)
-        content = choice_text(data)
-        last_status, last_data = status, data
-        if status < 400 and content.strip() and not soft_refusal(content):
-            reason = fallback_reason if fallback_reason != "none" else ("local_default" if i == 0 else "local_secondary")
-            log_call(task_id, requested_model, "sovereign-local", model, reason, int((time.perf_counter() - started) * 1000), "completed", refusal_intercepted)
-            return JSONResponse(with_provider(data, "sovereign-local", model, reason), status_code=status)
-        fallback_reason = "local_structured_or_refusal_failure"
-        refusal_intercepted = refusal_intercepted or soft_refusal(content)
+            results[p] = r
+    return {"benchmark": results}
 
-    log_call(task_id, requested_model, "sovereign-local", "fallback-chain", fallback_reason, int((time.perf_counter() - started) * 1000), "failed", refusal_intercepted)
-    if isinstance(last_data, dict):
-        return JSONResponse(with_provider(last_data, "sovereign-local", "fallback-chain", fallback_reason), status_code=last_status)
-    return Response(last_data, status_code=last_status)
+
+@app.get("/runs")
+async def runs(limit: int = 50):
+    c = conn()
+    c.row_factory = sqlite3.Row
+    rows = c.execute(
+        "select * from calls order by ts desc limit ?", (min(limit, 200),)
+    ).fetchall()
+    c.close()
+    return {"runs": [dict(row) for row in rows]}
+
+
+# ── Graceful shutdown ──────────────────────────────────────────────
+
+@app.on_event("shutdown")
+async def _shutdown():
+    await router.close()

@@ -26,7 +26,7 @@ export default function SettingsPage() {
               { name: 'Bifrost Gateway', url: 'http://127.0.0.1:8000', status: 'ok' },
               { name: 'DeerFlow', url: 'http://127.0.0.1:2026', status: 'ok' },
               { name: 'Mem0', url: 'http://127.0.0.1:8300', status: 'ok' },
-              { name: 'Ollama LLM', url: 'http://127.0.0.1:11434', status: 'ok' },
+              { name: 'Bifrost Health', url: 'http://127.0.0.1:8000/health', status: 'ok' },
             ].map(ep => (
               <div key={ep.name} className="flex items-center justify-between rounded-xl border border-white/[0.06] bg-white/[0.03] px-4 py-3 backdrop-blur-md hover:bg-white/[0.05] transition-all">
                 <div className="flex items-center gap-3">
@@ -49,9 +49,9 @@ export default function SettingsPage() {
           <div className="space-y-4 text-sm">
             {[
               { label: 'Monthly Cap', value: '$38.00 USD' },
-              { label: 'Local Chain', value: 'qwen3-8b, dolphin-mistral-7b' },
+              { label: 'External Providers', value: 'Groq, Cerebras, OpenRouter, Fireworks' },
               { label: 'Policy Engine', value: 'Hard Stop + Dual-Use Auth' },
-              { label: 'Fallback Strategy', value: 'Remote → Local → Policy' },
+              { label: 'Fallback Strategy', value: 'Primary → OpenRouter Free → Policy' },
             ].map(item => (
               <div key={item.label} className="flex justify-between items-center border-b border-white/[0.04] pb-3 last:border-0 last:pb-0">
                 <span className="text-muted">{item.label}</span>
@@ -76,14 +76,14 @@ export default function SettingsPage() {
               </div>
             </div>
             <p className="text-xs text-muted leading-relaxed">
-              Local high-compliance agentic stack. All inference runs on localhost.
-              Remote APIs only used when explicitly configured and for non-sensitive tasks.
-              Built with Next.js 16, React 19, Tailwind CSS, and sovereign-local LLMs.
+              Local high-compliance agentic stack. All LLM calls route through Bifrost v2
+              to external GPU providers (Groq, Cerebras, OpenRouter, etc.). No local Ollama required.
+              Built with Next.js 16, React 19, Tailwind CSS, and Bifrost v2 provider routing.
             </p>
             <div className="flex items-center gap-2 text-xs text-muted">
               <Shield className="h-3.5 w-3.5" /> End-to-end encrypted
               <span className="mx-1">&middot;</span>
-              <Globe className="h-3.5 w-3.5" /> Zero external dependencies
+              <Globe className="h-3.5 w-3.5" /> External GPU provider routing
             </div>
           </div>
         </CardContent>

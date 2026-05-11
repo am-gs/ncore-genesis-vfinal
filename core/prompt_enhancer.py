@@ -6,7 +6,7 @@ Rewrites every incoming prompt for maximum output quality before routing.
   - Domain-specific output templates
   - 8-point quality injection directives
   - Cinematic 8-layer framework for video/image prompts
-  - Async Ollama critic loop with retry
+  - Async Bifrost critic loop with retry
   - FastAPI standalone endpoint on :8081
 """
 from __future__ import annotations
@@ -359,15 +359,15 @@ def build_cinematic_prompt(raw_prompt: str) -> dict[str, str]:
 
 # ── 7. enhance() — main entry point ────────────────────────────────────────
 
-OLLAMA_URL = "http://localhost:11434/api/generate"
-OLLAMA_MODEL = "ncore-critic"
+from core.bifrost_client import bifrost_chat
+
 CRITIC_MAX_RETRIES = 2
 
 
 async def _call_critic(enhanced_prompt: str) -> tuple[int, str]:
-    """Call local Ollama critic model for quality scoring.
+    """Call external provider via Bifrost for quality scoring.
 
-    Returns (score, feedback).  Returns (-1, "") if Ollama is unavailable.
+    Returns (score, feedback).  Returns (-1, "") if no providers are available.
     """
     scoring_prompt = (
         "You are an expert prompt quality evaluator. Score the following enhanced prompt "
@@ -376,24 +376,21 @@ async def _call_critic(enhanced_prompt: str) -> tuple[int, str]:
         "Respond ONLY with JSON: {\"score\": <int>, \"feedback\": \"<text>\"}"
     )
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(
-                OLLAMA_URL,
-                json={"model": OLLAMA_MODEL, "prompt": scoring_prompt, "stream": False},
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            # Ollama returns the full text in "response" field
-            import json as _json
-            raw_text = data.get("response", "")
-            # Try to extract JSON from the response text
-            json_match = re.search(r"\{[^}]+\}", raw_text)
-            if json_match:
-                parsed = _json.loads(json_match.group())
-                return int(parsed.get("score", 0)), str(parsed.get("feedback", ""))
-            return 50, "Could not parse critic response"
-    except (httpx.HTTPError, httpx.ConnectError, OSError, ValueError) as exc:
-        log.warning("ollama_critic_unavailable", error=str(exc))
+        result = await bifrost_chat(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": scoring_prompt}],
+            temperature=0.3,
+            max_tokens=256,
+        )
+        raw_text = result.get("content", "")
+        import json as _json
+        json_match = re.search(r"\{[^}]+\}", raw_text)
+        if json_match:
+            parsed = _json.loads(json_match.group())
+            return int(parsed.get("score", 0)), str(parsed.get("feedback", ""))
+        return 50, "Could not parse critic response"
+    except Exception as exc:
+        log.warning("bifrost_critic_unavailable", error=str(exc))
         return -1, ""
 
 
@@ -458,7 +455,7 @@ async def enhance(
         critic_score = score
 
         if score == -1:
-            log.info("critic_skipped", reason="ollama_unavailable", task_id=task_id)
+            log.info("critic_skipped", reason="bifrost_unavailable", task_id=task_id)
             break
         if score >= 70:
             log.info("critic_passed", score=score, attempt=attempt, task_id=task_id)

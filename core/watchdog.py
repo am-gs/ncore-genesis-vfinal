@@ -44,13 +44,13 @@ CACHE_STALE_HOURS = 24
 
 SERVICES = [
     {
-        "name": "ollama",
-        "url": "http://localhost:11434/api/tags",
-        "systemd_unit": "ollama",
+        "name": "bifrost-proxy",
+        "url": "http://localhost:8000/health",
+        "systemd_unit": "sovereign-bifrost",
     },
     {
         "name": "ncore-gateway",
-        "url": "http://localhost:8080/health",
+        "url": "http://localhost:3001/health",
         "systemd_unit": "ncore-gateway",
     },
     {
