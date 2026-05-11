@@ -112,6 +112,8 @@ def clean_exact_text(text: str) -> str:
 
 
 def local_model_for(requested: str | None, fallback_index: int = 0) -> str:
+    if requested in ("ncore-fast-uncensored", "ncore-fast-uncensored:latest"):
+        return "ncore-fast-uncensored:latest"
     if requested in ("dolphin-mistral-7b", "dolphin-mistral-7b:latest"):
         return "dolphin-mistral-7b:latest"
     if requested in ("qwen3-8b", "qwen3-8b:latest", "claude-haiku-4-5", "gpt-4o-mini", None, ""):

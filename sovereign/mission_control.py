@@ -433,14 +433,6 @@ async def create_task(body: dict):
         _tasks[task["id"]] = task
         _save_tasks()
 
-    # Transition planning -> running -> start simulation
-    async with _lock:
-        task["status"] = TaskState.RUNNING
-        task["updated_at"] = iso_now()
-        _save_tasks()
-    _start_simulation(task["id"])
-    _broadcast(task["id"], {"status": "running", "progress": 0})
-
     return task
 
 
@@ -609,7 +601,7 @@ async def execute_task(task_id: str):
         _save_tasks()
     async def _guard():
         try:
-            await asyncio.wait_for(_run_manus(task_id), timeout=600)
+            await asyncio.wait_for(_run_manus(task_id), timeout=300)
         except asyncio.TimeoutError:
             async with _lock:
                 t = _tasks.get(task_id)
@@ -654,7 +646,7 @@ async def execute_langgraph_task(task_id: str):
         try:
             await asyncio.wait_for(
                 run_langgraph_task(task_id, task.get("description", "")),
-                timeout=600,
+                timeout=300,
             )
         except asyncio.TimeoutError:
             async with _lock:

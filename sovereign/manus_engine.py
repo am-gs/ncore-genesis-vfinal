@@ -29,6 +29,8 @@ except Exception:  # pragma: no cover
     async_playwright = None  # type: ignore
 
 
+OLLAMA_URL = "http://127.0.0.1:11434/v1/chat/completions"
+
 BIFROST_URL = "http://127.0.0.1:8000/v1/chat/completions"
 
 
@@ -77,26 +79,28 @@ def _new_task_dict(*args, **kwargs) -> dict:
 # LLM helpers via Bifrost
 # ---------------------------------------------------------------------------
 
-async def _chat(messages: List[dict], model: str = "ncore-fast-uncensored:latest", max_tokens: int = 256, timeout: float = 60) -> str:
+async def _chat(messages: List[dict], model: str = "qwen2.5:3b", max_tokens: int = 256, timeout: float = 120) -> str:
     payload = {
         "model": model,
         "messages": messages,
         "max_tokens": max_tokens,
         "temperature": 0.3,
     }
+    url = OLLAMA_URL
     async with httpx.AsyncClient(timeout=timeout) as client:
         try:
             r = await asyncio.wait_for(
-                client.post(BIFROST_URL, json=payload, headers={"content-type": "application/json"}),
+                client.post(url, json=payload, headers={"content-type": "application/json"}),
                 timeout=timeout,
             )
         except asyncio.TimeoutError:
             raise asyncio.TimeoutError(f"LLM inference timed out after {timeout}s")
     if r.status_code >= 400:
-        raise RuntimeError(f"Bifrost error {r.status_code}: {r.text}")
+        raise RuntimeError(f"Ollama error {r.status_code}: {r.text}")
     data = r.json()
     choices = data.get("choices") or [{}]
-    return str(choices[0].get("message", {}).get("content", ""))
+    msg = choices[0].get("message", {})
+    return str(msg.get("content", "") or msg.get("reasoning", ""))
 
 
 async def _generate_plan(task_description: str) -> List[dict]:
@@ -110,7 +114,7 @@ async def _generate_plan(task_description: str) -> List[dict]:
     )
     user = f"Task: {task_description}\n\nPlan:"
     messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
-    raw = await _chat(messages, max_tokens=256, timeout=60)
+    raw = await _chat(messages, max_tokens=256, timeout=120)
     cleaned = raw.strip().strip("`").strip()
     if cleaned.startswith("json"):
         cleaned = cleaned[4:].strip()
@@ -122,7 +126,6 @@ async def _generate_plan(task_description: str) -> List[dict]:
             plan = []
     except Exception:
         plan = []
-    # If JSON parsing fails, synthesize a single terminal step so we don't stall.
     if not plan:
         plan = [{"tool": "terminal_execute", "input": {"command": "echo 'No plan generated'"}, "description": "Fallback terminal step"}]
     return plan
@@ -137,7 +140,7 @@ async def _decide_next_action(task_description: str, history: List[dict]) -> dic
     )
     user = f"Task: {task_description}\n\nHistory: {json.dumps(history, default=str)}\n\nDecision:"
     messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
-    raw = await _chat(messages, max_tokens=128, timeout=60)
+    raw = await _chat(messages, max_tokens=128, timeout=120)
     cleaned = raw.strip().strip("`").strip()
     if cleaned.startswith("json"):
         cleaned = cleaned[4:].strip()
