@@ -36,8 +36,7 @@ log "installing systemd units"
 sudo tee /etc/systemd/system/sovereign-bifrost.service >/dev/null <<UNIT
 [Unit]
 Description=Sovereign Bifrost Gateway Shim
-After=network.target ollama.service
-Requires=ollama.service
+After=network.target
 
 [Service]
 Type=simple
@@ -130,5 +129,5 @@ cd "$SOVEREIGN_HOME"
 docker compose --env-file .env up -d postgres redis chroma prometheus grafana
 
 log "warnings for broad legacy binds"
-ss -tlnp | grep -E '0\.0\.0\.0:(8080|8090|8888|11235)|\*:(11434)' || true
+ss -tlnp | grep -E '0\.0\.0\.0:(8080|8090|8888|11235)' || true
 log "done"

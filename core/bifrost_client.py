@@ -1,9 +1,9 @@
 """Bifrost Gateway Client for NLLM.ING
 
-Routes all LLM calls through Bifrost (maximhq/bifrost) for:
-- Semantic caching (30-40% cost reduction on repeated/similar queries)
+Routes all LLM calls through Bifrost (local multi-provider proxy) for:
+- Intelligent provider routing with latency-based ranking
 - Budget enforcement ($50/month cap)
-- Auto-failover across 15+ providers
+- Auto-failover across 10+ external providers
 - Unified provider management via single OpenAI-compatible API
 
 Fallback: If Bifrost is unreachable, routes directly to OpenRouter.
@@ -19,7 +19,7 @@ import structlog
 
 log = structlog.get_logger()
 
-BIFROST_URL = os.environ.get("BIFROST_URL", "http://localhost:8080")
+BIFROST_URL = os.environ.get("BIFROST_URL", "http://localhost:8000")
 OPENROUTER_URL = "https://openrouter.ai/api/v1"
 OPENROUTER_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 
@@ -28,7 +28,7 @@ class BifrostClient:
     """Drop-in replacement for direct OpenRouter/Anthropic calls.
 
     All methods prefer Bifrost, fall back to OpenRouter on 502/503/timeout.
-    Budget tracking parsed from x-bifrost-cost response header.
+    Budget tracking parsed from _bifrost_cost_usd in the response body.
     """
 
     def __init__(self, base_url: str | None = None, api_key: str | None = None,
@@ -42,8 +42,9 @@ class BifrostClient:
 
     @property
     def client(self) -> httpx.AsyncClient:
-        if self._client is None:
-            self._client = httpx.AsyncClient(timeout=120)
+        if self._client is None or self._client.is_closed:
+            limits = httpx.Limits(max_connections=20, max_keepalive_connections=10)
+            self._client = httpx.AsyncClient(timeout=120, limits=limits)
         return self._client
 
     # ── Core: chat completion ────────────────────────────────────────────
@@ -58,7 +59,7 @@ class BifrostClient:
     ) -> dict:
         """Send chat completion through Bifrost → OpenRouter fallback.
 
-        Returns {content, tokens_in, tokens_out, model, provider, cached, cost_usd}
+        Returns {content, tokens_in, tokens_out, model, provider, cached, cost_usd, latency_ms}
         """
         payload = {
             "model": model,
@@ -84,16 +85,15 @@ class BifrostClient:
             if r.status_code == 200:
                 data = r.json()
                 usage = data.get("usage", {})
-                cost_hdr = r.headers.get("x-bifrost-cost")
-                cached = r.headers.get("x-bifrost-cached") == "true"
                 return {
                     "content": data["choices"][0]["message"]["content"],
                     "tokens_in": usage.get("prompt_tokens", 0),
                     "tokens_out": usage.get("completion_tokens", 0),
                     "model": data.get("model", model),
-                    "provider": data.get("provider", "bifrost"),
-                    "cached": cached,
-                    "cost_usd": float(cost_hdr) if cost_hdr else 0.0,
+                    "provider": data.get("_bifrost_provider", "bifrost"),
+                    "cached": False,
+                    "cost_usd": data.get("_bifrost_cost_usd", 0.0),
+                    "latency_ms": data.get("_bifrost_latency_ms", 0.0),
                     "source": "bifrost",
                 }
             # Bifrost error → fallback
@@ -127,6 +127,7 @@ class BifrostClient:
             "provider": "openrouter",
             "cached": False,
             "cost_usd": 0.0,  # Will be estimated downstream
+            "latency_ms": 0.0,
             "source": "openrouter",
         }
 
@@ -135,17 +136,18 @@ class BifrostClient:
     async def get_health(self) -> dict:
         try:
             r = await self.client.get(f"{self.base_url}/health", timeout=5.0)
-            return {"status": "ok" if r.status_code == 200 else "error",
-                    "code": r.status_code, "body": r.text[:200]}
+            if r.status_code == 200:
+                return r.json()
+            return {"status": "error", "code": r.status_code, "body": r.text[:200]}
         except Exception as e:
             return {"status": "down", "error": str(e)}
 
     async def get_budget_status(self) -> dict:
         """Fetch remaining budget from Bifrost."""
         try:
-            r = await self.client.get(f"{self.base_url}/api/budget", timeout=5.0)
+            r = await self.client.get(f"{self.base_url}/metrics", timeout=5.0)
             if r.status_code == 200:
-                return r.json()
+                return {"metrics_raw": r.text}
             return {"status": "error", "code": r.status_code}
         except Exception as e:
             return {"status": "unreachable", "error": str(e)}
@@ -161,17 +163,21 @@ class BifrostClient:
             return []
 
     async def get_cache_stats(self) -> dict:
-        """Semantic cache hit rate and savings."""
+        """Semantic cache hit rate and savings (not available in v2)."""
+        return {"status": "not_implemented", "note": "Cache stats moved to provider_router.latency tracker"}
+
+    async def get_providers(self) -> dict:
+        """List configured providers and their health."""
         try:
-            r = await self.client.get(f"{self.base_url}/api/cache/stats", timeout=5.0)
+            r = await self.client.get(f"{self.base_url}/providers", timeout=10.0)
             if r.status_code == 200:
                 return r.json()
-            return {}
-        except Exception:
-            return {}
+            return {"status": "error", "code": r.status_code}
+        except Exception as e:
+            return {"status": "unreachable", "error": str(e)}
 
     async def close(self):
-        if self._client:
+        if self._client and not self._client.is_closed:
             await self._client.aclose()
 
 
@@ -204,8 +210,8 @@ if __name__ == "__main__":
         bc = BifrostClient()
         health = await bc.get_health()
         print(json.dumps(health, indent=2))
-        budget = await bc.get_budget_status()
-        print(json.dumps(budget, indent=2))
+        providers = await bc.get_providers()
+        print(json.dumps(providers, indent=2))
         models = await bc.list_models()
         print(f"Models available: {len(models)}")
 
