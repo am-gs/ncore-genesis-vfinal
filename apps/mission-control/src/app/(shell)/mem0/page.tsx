@@ -5,7 +5,7 @@ import { Brain, MemoryStick, Search, Clock } from 'lucide-react';
 
 const memories = [
   { id: 1, content: 'User prefers dark mode for all dashboards', category: 'Preference', created: '2h ago' },
-  { id: 2, content: 'Bifrost fallback to local qwen3-8b when remote refuses', category: 'System', created: '5h ago' },
+  { id: 2, content: 'Bifrost fallback to OpenRouter free tier when primary providers refuse', category: 'System', created: '5h ago' },
   { id: 3, content: 'Agent Zero skill: web-search enabled by default', category: 'Skill', created: '1d ago' },
   { id: 4, content: 'Watchdog restart threshold: 2 consecutive failures', category: 'Config', created: '2d ago' },
   { id: 5, content: 'Monthly budget cap set to $38.00 USD', category: 'Budget', created: '3d ago' },

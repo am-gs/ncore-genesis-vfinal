@@ -1,5 +1,5 @@
 [Unit]
-Description=Sovereign Bifrost LLM Proxy
+Description=Sovereign Bifrost v2 — External Provider LLM Gateway
 After=network.target
 
 [Service]

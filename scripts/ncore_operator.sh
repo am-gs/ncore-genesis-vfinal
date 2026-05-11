@@ -54,7 +54,7 @@ for spec in \
   "Bifrost http://127.0.0.1:8000/health" \
   "DeerFlow http://127.0.0.1:2026/api/health" \
   "Mem0 http://127.0.0.1:8300/health" \
-  "Ollama http://127.0.0.1:11434/v1/models" \
+
   "Chroma http://127.0.0.1:8200/api/v2/heartbeat"; do
   name=${spec%% *}; url=${spec#* }
   code=$(curl -sS -m 8 -o /dev/null -w "%{http_code}" "$url" || true)
@@ -65,7 +65,7 @@ done'
 status() {
   ssh_live 'set -Eeuo pipefail
 echo "== systemd =="
-systemctl --no-pager --plain --type=service --state=running | grep -E "sovereign-|ollama|tailscale|ncore-tailnet" || true
+systemctl --no-pager --plain --type=service --state=running | grep -E "sovereign-|tailscale|ncore-tailnet" || true
 echo
 echo "== compose =="
 cd /home/ubuntu/sovereign 2>/dev/null && docker compose --env-file .env ps || true
@@ -91,7 +91,7 @@ set -Eeuo pipefail
 NCORE_PUBLIC_HOST="$1"
 TSIP=$(tailscale ip -4 2>/dev/null | head -n1 || true)
 echo "tailscale_ip=${TSIP:-none}"
-ss -tlnp | grep -E ":(3004|8090|3002|3001|8000|2026|8300|11434|5432|6380|8200|9090)" || true
+ss -tlnp | grep -E ":(3004|8090|3002|3001|8000|2026|8300|5432|6380|8200|9090)" || true
 echo
 echo "public_probe"
 for p in 3004 3001 8000 2026 8300; do

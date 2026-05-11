@@ -5,7 +5,7 @@ v7.7 (May 7 2026):
     Best for: long-context analysis, multi-document synthesis, 50K+ token tasks
   - FAST tier: GPT-OSS 20B free (matches o3-mini, $0, 13 providers)
   - FREE_REASONING tier: DeepSeek R1 free ($0, reasoning)
-  - UNCENSORED_LOCAL tier: Qwen3.5-35B-A3B abliterated (local Ollama)
+  - UNCENSORED_LOCAL tier: OpenRouter free tier with uncensored models
   - WORKER tier: DeepSeek V3.2 ($0.14/$0.28 per M, cheapest paid frontier)
   - 8-tier cascade routes ~90% of tasks to $0 infrastructure
 
@@ -35,7 +35,7 @@ class ModelTier(Enum):
     OPUS            = "opus"            # Claude Opus 4.6 (budget-gated)
     CODER           = "coder"           # Qwen3-Coder-30B on Vast
     UNCENSORED      = "uncensored"      # Vast serverless or local abliterated
-    UNCENSORED_LOCAL = "uncensored_local"  # Qwen3.5 abliterated on Ollama
+    UNCENSORED_LOCAL = "uncensored_local"  # OpenRouter free tier uncensored fallback
     KIMI            = "kimi"            # Kimi K2.6 via OpenRouter (256K context)
     INVESTIGATION   = "investigation"     # Agent Zero autonomous OSINT/investigation
     IMAGE_GEN       = "image"
@@ -225,14 +225,14 @@ class NCoreMasterRouter:
     # ── Tier builders ────────────────────────────────────────────────
 
     def _local_uncensored(self, reason: str) -> dict:
-        """Local dolphin3 8B via llama-server — ZERO filters, guaranteed compliance."""
+        """OpenRouter free-tier uncensored fallback — routes through external GPU providers."""
         return asdict(RouteDecision(
             tier="uncensored_local",
-            model="dolphin3-8b",
-            provider="llama-server",
-            endpoint=os.environ.get("LOCAL_LLM_URL", "http://localhost:9090"),
-            engine="llama-cpp",
-            reason=f"{reason} | LOCAL UNCENSORED (dolphin3, $0)",
+            model=os.environ.get("UNCENSORED_MODEL", "openrouter/free"),
+            provider="openrouter",
+            endpoint="https://openrouter.ai/api/v1",
+            engine="direct",
+            reason=f"{reason} | OPENROUTER FREE UNCENSORED ($0)",
             estimated_cost_usd=0.0
         ))
 

@@ -2,7 +2,7 @@
 """
 LangGraph-based agent orchestration for Sovereign Mission Control.
 
-Integrates with Bifrost LLM gateway (Ollama-compatible OpenAI API)
+Integrates with Bifrost LLM gateway (OpenAI-compatible API)
 and follows Deep Agents SDK patterns:
 - Recursive planning via graph nodes
 - Subagent spawning via conditional edges
@@ -30,7 +30,7 @@ except ImportError:
     HumanMessage = SystemMessage = AIMessage = object
 
 BIFROST_URL = os.environ.get("BIFROST_URL", "http://127.0.0.1:8000")
-DEFAULT_MODEL = "qwen3-8b:latest"
+DEFAULT_MODEL = "llama-3.3-70b"
 
 
 class AgentState(TypedDict):
@@ -52,12 +52,12 @@ def _iso_now() -> str:
 
 
 class BifrostLLM:
-    """Ollama-compatible LLM client that routes through Bifrost gateway."""
+    """OpenAI-compatible LLM client that routes through Bifrost gateway to external GPU providers."""
 
     def __init__(self, model: str = DEFAULT_MODEL, temperature: float = 0.3):
         self.model = model
         self.temperature = temperature
-        self.client = httpx.AsyncClient(timeout=180.0)
+        self.client = httpx.AsyncClient(timeout=30.0)
 
     async def invoke(self, messages: List[Dict[str, str]], max_tokens: int = 900) -> str:
         payload = {

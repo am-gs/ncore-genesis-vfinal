@@ -35,7 +35,7 @@ fi
 log "installing systemd units"
 sudo tee /etc/systemd/system/sovereign-bifrost.service >/dev/null <<UNIT
 [Unit]
-Description=Sovereign Bifrost Gateway Shim
+Description=Sovereign Bifrost v2 — External Provider Gateway
 After=network.target
 
 [Service]
@@ -105,7 +105,7 @@ UNIT
 sudo tee /etc/systemd/system/sovereign-watchdog.service >/dev/null <<UNIT
 [Unit]
 Description=Sovereign Stack Watchdog
-After=docker.service sovereign-llm.service sovereign-bifrost.service
+After=docker.service sovereign-bifrost.service
 Requires=docker.service
 
 [Service]

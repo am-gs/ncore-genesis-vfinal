@@ -44,7 +44,6 @@ app.add_middleware(
 SERVICES = {
     'Agent Zero': {'type': 'http', 'url': 'http://127.0.0.1:8090/api/health', 'restart': ['docker', 'restart', 'agent-zero'], 'link': 'http://ncore-v2:8090'},
     'Bifrost': {'type': 'systemd', 'unit': 'sovereign-bifrost', 'url': 'http://127.0.0.1:8000/health', 'link': 'http://127.0.0.1:8000/health'},
-    'LLM': {'type': 'systemd', 'unit': 'ollama', 'url': 'http://127.0.0.1:11434/v1/models', 'link': 'http://127.0.0.1:11434/v1/models'},
     'DeerFlow': {'type': 'systemd', 'unit': 'sovereign-deerflow', 'url': 'http://127.0.0.1:2026/api/health', 'link': 'http://127.0.0.1:2026/api/health'},
     'Mem0': {'type': 'systemd', 'unit': 'sovereign-mem0', 'url': 'http://127.0.0.1:8300/health', 'link': 'http://127.0.0.1:8300/health'},
     'Chroma': {'type': 'compose', 'service': 'chroma', 'url': 'http://127.0.0.1:8200/api/v2/heartbeat', 'link': 'http://127.0.0.1:8200/api/v2/heartbeat'},
