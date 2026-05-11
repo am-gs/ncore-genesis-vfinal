@@ -19,11 +19,13 @@ Usage: scripts/ncore_operator.sh <command>
 Commands:
   doctor       Full live health, ports, recent failures, and tailnet URLs
   health       HTTP health checks for live sovereign services
-  status       systemd/docker/tailscale status summary
+  status       External provider health + systemd/docker/tailscale status summary
   urls         Print Tailscale dashboard/API URLs
   ports        Show managed listeners and public exposure check
   logs [unit]  Tail systemd logs for a sovereign unit (default: sovereign-bifrost)
   regress      Run live sovereign regression suite
+  benchmark    Run the swarm benchmark across configured providers
+  validate     Run architecture validation on the sovereign VM
   apply        Rsync repo scripts/sovereign to VM and run apply_sovereign_stack.sh
   tailnet      Re-run configure_tailscale_access.sh on the VM
 USAGE
@@ -71,7 +73,10 @@ echo "== compose =="
 cd /home/ubuntu/sovereign 2>/dev/null && docker compose --env-file .env ps || true
 echo
 echo "== tailscale =="
-tailscale status --self || true'
+tailscale status --self || true
+echo
+echo "== external provider health (Bifrost /providers) =="
+curl -fsS -m 10 http://127.0.0.1:8000/providers 2>/dev/null | python3 -m json.tool 2>/dev/null || echo "Bifrost /providers unreachable"'
 }
 
 urls() {
@@ -117,6 +122,26 @@ set -Eeuo pipefail
 repo="$1"
 cd /home/ubuntu/sovereign
 "$repo/scripts/run_sovereign_regression.sh"
+REMOTE
+}
+
+benchmark() {
+  validate_remote_repo
+  ssh_live bash -s -- "$NCORE_REMOTE_REPO" <<'REMOTE'
+set -Eeuo pipefail
+repo="$1"
+cd "$repo"
+python3 scripts/deploy_swarm_benchmark.py
+REMOTE
+}
+
+validate() {
+  validate_remote_repo
+  ssh_live bash -s -- "$NCORE_REMOTE_REPO" <<'REMOTE'
+set -Eeuo pipefail
+repo="$1"
+cd "$repo"
+python3 scripts/validate_architecture.py
 REMOTE
 }
 
@@ -168,6 +193,8 @@ case "$cmd" in
   ports) ports "$@" ;;
   logs) logs "$@" ;;
   regress) regress "$@" ;;
+  benchmark) benchmark "$@" ;;
+  validate) validate "$@" ;;
   apply) apply_stack "$@" ;;
   tailnet) tailnet "$@" ;;
   -h|--help|help|"") usage ;;
