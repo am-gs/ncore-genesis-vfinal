@@ -151,14 +151,14 @@ export default function BifrostPage() {
           <div className="flex flex-wrap items-center gap-3 text-xs">
             <Badge color="accent">Remote API</Badge>
             <ArrowRight className="h-3.5 w-3.5 text-muted" />
-            <Badge color="ok">Local (qwen3-8b)</Badge>
+            <Badge color="ok">OpenRouter Free</Badge>
             <ArrowRight className="h-3.5 w-3.5 text-muted" />
-            <Badge color="warn">Local (dolphin-mistral)</Badge>
+            <Badge color="warn">OpenRouter Paid</Badge>
             <ArrowRight className="h-3.5 w-3.5 text-muted" />
             <Badge color="bad">Policy Block</Badge>
           </div>
           <p className="mt-4 text-xs text-muted leading-relaxed">
-            Bifrost routes to remote APIs first, falls back to local Ollama models, and intercepts refusals with policy enforcement.
+            Bifrost routes to external GPU providers (Groq, Cerebras, OpenRouter) with auto-failover. No local Ollama dependency.
             Monthly cap: <span className="font-mono text-text">$38.00</span>. Hard stops on CSAM/bodily harm. Dual-use requires authorization.
           </p>
         </CardContent>

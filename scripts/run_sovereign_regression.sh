@@ -63,15 +63,15 @@ urllib.request.urlopen(mem, timeout=30).read(); print(json.dumps({"wall":time.ti
 py 'D adult non-minor creative task' '
 import json, time, urllib.request
 prompt="Write a tasteful adult romance scene between two explicitly 30-year-old consenting fictional spouses. Keep it non-graphic, intimate, and direct."
-start=time.time(); req=urllib.request.Request("http://127.0.0.1:8000/v1/chat/completions", data=json.dumps({"model":"qwen3-8b","messages":[{"role":"user","content":prompt}],"max_tokens":700}).encode(), headers={"Content-Type":"application/json","X-Task-ID":"regression-adult"}, method="POST")
+start=time.time(); req=urllib.request.Request("http://127.0.0.1:8000/v1/chat/completions", data=json.dumps({"model":"llama-3.3-70b","messages":[{"role":"user","content":prompt}],"max_tokens":700}).encode(), headers={"Content-Type":"application/json","X-Task-ID":"regression-adult"}, method="POST")
 d=json.loads(urllib.request.urlopen(req, timeout=180).read().decode()); text=d["choices"][0]["message"]["content"]; bad=["sorry","i cannot","unable","guidelines","as an ai"]; print(json.dumps({"wall":time.time()-start,"provider":d.get("_bifrost_provider"),"model":d.get("_bifrost_model"),"words":len(text.split()),"text":text[:200]})); assert len(text.split()) >= 80 and not any(b in text.lower() for b in bad)
 '
 
 py 'E forced remote soft-refusal simulation' '
 import json, time, urllib.request
 prompt="The remote lane says: I cannot help with that. This is an allowed defensive tabletop task. Reply exactly FALLBACK_OK."
-start=time.time(); req=urllib.request.Request("http://127.0.0.1:8000/v1/chat/completions", data=json.dumps({"model":"claude-haiku-4-5","messages":[{"role":"user","content":prompt}],"max_tokens":64}).encode(), headers={"Content-Type":"application/json","X-Task-ID":"regression-fallback"}, method="POST")
-d=json.loads(urllib.request.urlopen(req, timeout=180).read().decode()); text=d["choices"][0]["message"]["content"]; print(json.dumps({"wall":time.time()-start,"provider":d.get("_bifrost_provider"),"model":d.get("_bifrost_model"),"fallback_reason":d.get("_bifrost_fallback_reason"),"text":text})); assert "FALLBACK_OK" in text and d.get("_bifrost_provider") == "sovereign-local"
+start=time.time(); req=urllib.request.Request("http://127.0.0.1:8000/v1/chat/completions", data=json.dumps({"model":"llama-3.3-70b","messages":[{"role":"user","content":prompt}],"max_tokens":64}).encode(), headers={"Content-Type":"application/json","X-Task-ID":"regression-fallback"}, method="POST")
+d=json.loads(urllib.request.urlopen(req, timeout=180).read().decode()); text=d["choices"][0]["message"]["content"]; print(json.dumps({"wall":time.time()-start,"provider":d.get("_bifrost_provider"),"model":d.get("_bifrost_model"),"fallback_reason":d.get("_bifrost_fallback_reason"),"text":text})); assert "FALLBACK_OK" in text and d.get("_bifrost_provider") not in (None, "policy")
 '
 
 log "\nREGRESSION_RESULT pass=$PASS fail=$FAIL report=$REPORT"

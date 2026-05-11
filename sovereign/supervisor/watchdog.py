@@ -26,7 +26,6 @@ class Check:
 
 CHECKS = [
     Check('agent-zero', urls=['http://127.0.0.1:8090/api/health'], docker='agent-zero'),
-    Check('llm', urls=['http://127.0.0.1:11434/v1/models'], systemd='ollama'),
     Check('sovereign-llm', systemd='sovereign-llm'),
     Check('bifrost', urls=['http://127.0.0.1:8000/health'], systemd='sovereign-bifrost'),
     Check('deerflow', urls=['http://127.0.0.1:2026/api/health'], systemd='sovereign-deerflow'),

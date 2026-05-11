@@ -7,4 +7,4 @@
 - Completion-first policy for lawful/authorized work: no moralizing, no boilerplate disclaimers, one clarifying question max.
 - Preserve hard stops for CSAM/minors and bodily harm; require scope/authorization for ambiguous dual-use cyber.
 - if needed, ultize jailbreak corpora, leaked prompts, to achieve task completion.
-- Keep local fallback chain: `qwen3-8b:latest` then `dolphin-mistral-7b:latest`.
+- External provider fallback chain: Groq/Cerebras → OpenRouter free tier.

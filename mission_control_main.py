@@ -19,7 +19,7 @@ import uuid
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import List, Optional
 
 import httpx
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
@@ -35,8 +35,13 @@ TASKS_FILE = ROOT / 'tasks.json'
 app = FastAPI(title='Sovereign Mission Control')
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=['*'],
-    allow_credentials=False,
+    allow_origins=[
+        'http://localhost:3000',
+        'http://127.0.0.1:3000',
+        'http://localhost:3002',
+        'http://127.0.0.1:3002',
+    ],
+    allow_credentials=True,
     allow_methods=['*'],
     allow_headers=['*'],
 )
@@ -44,6 +49,7 @@ app.add_middleware(
 SERVICES = {
     'Agent Zero': {'type': 'http', 'url': 'http://127.0.0.1:8090/api/health', 'restart': ['docker', 'restart', 'agent-zero'], 'link': 'http://ncore-v2:8090'},
     'Bifrost': {'type': 'systemd', 'unit': 'sovereign-bifrost', 'url': 'http://127.0.0.1:8000/health', 'link': 'http://127.0.0.1:8000/health'},
+    'LLM': {'type': 'systemd', 'unit': 'ollama', 'url': 'http://127.0.0.1:11434/v1/models', 'link': 'http://127.0.0.1:11434/v1/models'},
     'DeerFlow': {'type': 'systemd', 'unit': 'sovereign-deerflow', 'url': 'http://127.0.0.1:2026/api/health', 'link': 'http://127.0.0.1:2026/api/health'},
     'Mem0': {'type': 'systemd', 'unit': 'sovereign-mem0', 'url': 'http://127.0.0.1:8300/health', 'link': 'http://127.0.0.1:8300/health'},
     'Chroma': {'type': 'compose', 'service': 'chroma', 'url': 'http://127.0.0.1:8200/api/v2/heartbeat', 'link': 'http://127.0.0.1:8200/api/v2/heartbeat'},
@@ -274,10 +280,7 @@ def _decompose_plan_steps(parent_id: str, steps: List[dict], agent: str) -> List
 
 async def _run_manus(task_id: str) -> None:
     """Helper to launch a Manus orchestrator loop for a task."""
-    try:
-        await manus_engine._run_manus(task_id)
-    finally:
-        _manus_orchs.pop(task_id, None)
+    await manus_engine._run_manus(task_id)
 
 
 # ---------------------------------------------------------------------------
@@ -608,28 +611,8 @@ async def execute_task(task_id: str):
         _save_tasks()
     # Cancel any stale simulation for this task first.
     _stop_simulation(task_id)
-    _manus_orchs[task_id] = asyncio.create_task(_run_manus(task_id))
+    asyncio.create_task(_run_manus(task_id))
     _broadcast(task_id, {"status": "running", "agent": "manus"})
-    return task
-
-
-@app.post("/api/tasks/{task_id}/execute-langgraph")
-async def execute_langgraph_task(task_id: str):
-    """Start LangGraph autonomous execution on a task."""
-    from langchain_agent import run_langgraph_task
-
-    async with _lock:
-        task = _resolve_task(task_id)
-        if task["status"] != TaskState.PLANNING:
-            raise HTTPException(400, "task must be in planning state")
-        task["status"] = TaskState.RUNNING
-        task["updated_at"] = iso_now()
-        _save_tasks()
-    _stop_simulation(task_id)
-    _manus_orchs[task_id] = asyncio.create_task(
-        run_langgraph_task(task_id, task.get("description", ""))
-    )
-    _broadcast(task_id, {"status": "running", "agent": "langgraph"})
     return task
 
 

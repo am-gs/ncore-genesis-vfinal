@@ -1,6 +1,6 @@
 import type { HealthResponse, RunsResponse, RestartResponse, Task, PlanStep, Artifact, Screenshot } from '@/types';
 
-const BASE = typeof window !== 'undefined' ? (process.env.NEXT_PUBLIC_API_URL || '') : '';
+const BASE = typeof window !== 'undefined' ? (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:3004') : '';
 
 export async function fetchHealth(): Promise<HealthResponse> {
   const r = await fetch(`${BASE}/api/health`, { cache: 'no-store' });
@@ -132,13 +132,8 @@ export async function getArtifacts(id: string): Promise<{ task_id: string; artif
   return r.json();
 }
 
-export function getTerminalWSUrl(id: string): string {
+export function connectTerminalWS(id: string): WebSocket {
   const protocol = typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const host = typeof window !== 'undefined' ? window.location.host : '127.0.0.1:3004';
-  return `${protocol}//${host}/ws/terminal/${id}`;
-}
-
-/** @deprecated - use getTerminalWSUrl for URL strings; this creates the WebSocket directly */
-export function connectTerminalWS(id: string): WebSocket {
-  return new WebSocket(getTerminalWSUrl(id));
+  return new WebSocket(`${protocol}//${host}/ws/terminal/${id}`);
 }

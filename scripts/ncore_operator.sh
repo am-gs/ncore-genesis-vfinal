@@ -19,11 +19,13 @@ Usage: scripts/ncore_operator.sh <command>
 Commands:
   doctor       Full live health, ports, recent failures, and tailnet URLs
   health       HTTP health checks for live sovereign services
-  status       systemd/docker/tailscale status summary
+  status       External provider health + systemd/docker/tailscale status summary
   urls         Print Tailscale dashboard/API URLs
   ports        Show managed listeners and public exposure check
   logs [unit]  Tail systemd logs for a sovereign unit (default: sovereign-bifrost)
   regress      Run live sovereign regression suite
+  benchmark    Run the swarm benchmark across configured providers
+  validate     Run architecture validation on the sovereign VM
   apply        Rsync repo scripts/sovereign to VM and run apply_sovereign_stack.sh
   tailnet      Re-run configure_tailscale_access.sh on the VM
 USAGE
@@ -54,7 +56,7 @@ for spec in \
   "Bifrost http://127.0.0.1:8000/health" \
   "DeerFlow http://127.0.0.1:2026/api/health" \
   "Mem0 http://127.0.0.1:8300/health" \
-  "Ollama http://127.0.0.1:11434/v1/models" \
+
   "Chroma http://127.0.0.1:8200/api/v2/heartbeat"; do
   name=${spec%% *}; url=${spec#* }
   code=$(curl -sS -m 8 -o /dev/null -w "%{http_code}" "$url" || true)
@@ -65,13 +67,16 @@ done'
 status() {
   ssh_live 'set -Eeuo pipefail
 echo "== systemd =="
-systemctl --no-pager --plain --type=service --state=running | grep -E "sovereign-|ollama|tailscale|ncore-tailnet" || true
+systemctl --no-pager --plain --type=service --state=running | grep -E "sovereign-|tailscale|ncore-tailnet" || true
 echo
 echo "== compose =="
 cd /home/ubuntu/sovereign 2>/dev/null && docker compose --env-file .env ps || true
 echo
 echo "== tailscale =="
-tailscale status --self || true'
+tailscale status --self || true
+echo
+echo "== external provider health (Bifrost /providers) =="
+curl -fsS -m 10 http://127.0.0.1:8000/providers 2>/dev/null | python3 -m json.tool 2>/dev/null || echo "Bifrost /providers unreachable"'
 }
 
 urls() {
@@ -91,7 +96,7 @@ set -Eeuo pipefail
 NCORE_PUBLIC_HOST="$1"
 TSIP=$(tailscale ip -4 2>/dev/null | head -n1 || true)
 echo "tailscale_ip=${TSIP:-none}"
-ss -tlnp | grep -E ":(3004|8090|3002|3001|8000|2026|8300|11434|5432|6380|8200|9090)" || true
+ss -tlnp | grep -E ":(3004|8090|3002|3001|8000|2026|8300|5432|6380|8200|9090)" || true
 echo
 echo "public_probe"
 for p in 3004 3001 8000 2026 8300; do
@@ -117,6 +122,26 @@ set -Eeuo pipefail
 repo="$1"
 cd /home/ubuntu/sovereign
 "$repo/scripts/run_sovereign_regression.sh"
+REMOTE
+}
+
+benchmark() {
+  validate_remote_repo
+  ssh_live bash -s -- "$NCORE_REMOTE_REPO" <<'REMOTE'
+set -Eeuo pipefail
+repo="$1"
+cd "$repo"
+python3 scripts/deploy_swarm_benchmark.py
+REMOTE
+}
+
+validate() {
+  validate_remote_repo
+  ssh_live bash -s -- "$NCORE_REMOTE_REPO" <<'REMOTE'
+set -Eeuo pipefail
+repo="$1"
+cd "$repo"
+python3 scripts/validate_architecture.py
 REMOTE
 }
 
@@ -168,6 +193,8 @@ case "$cmd" in
   ports) ports "$@" ;;
   logs) logs "$@" ;;
   regress) regress "$@" ;;
+  benchmark) benchmark "$@" ;;
+  validate) validate "$@" ;;
   apply) apply_stack "$@" ;;
   tailnet) tailnet "$@" ;;
   -h|--help|help|"") usage ;;

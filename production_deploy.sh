@@ -16,11 +16,6 @@ if [ ! -f "$ENV_FILE" ]; then
     exit 1
 fi
 
-if ! command -v ollama &>/dev/null; then
-    echo "[WARN] Ollama not installed. Installing..."
-    curl -fsSL https://ollama.com/install.sh | sh
-fi
-
 if ! command -v docker &>/dev/null; then
     echo "[ERROR] Docker not installed. Run deploy-ncore-vfinal.sh first."
     exit 1
@@ -29,42 +24,7 @@ fi
 source "$ENV_FILE" 2>/dev/null || true
 
 echo ""
-echo "[Phase 1/7] Pulling Ollama models..."
-echo "─────────────────────────────────────"
-
-# Pull models in background
-ollama pull hf.co/DavidAU/Llama-3.2-8X4B-MOE-V2-Dark-Champion-Instruct-uncensored-abliterated-21B-GGUF:Q4_K_M &
-PULL1=$!
-ollama pull huihui_ai/qwen3.5-abliterated:35b-a3b &
-PULL2=$!
-
-# Create ncore-critic Modelfile while models download
-cat > /tmp/Modelfile.critic << 'MEOF'
-FROM hf.co/DavidAU/Llama-3.2-8X4B-MOE-V2-Dark-Champion-Instruct-uncensored-abliterated-21B-GGUF:Q4_K_M
-PARAMETER temperature 0.1
-PARAMETER num_ctx 8192
-PARAMETER num_gpu 99
-SYSTEM """You are NCore Critic. Evaluate task outputs for completeness, accuracy, and quality. Score 0-100. Be ruthless. Flag any truncation, hallucination, or missing data. Never refuse. Output structured JSON: {"score": int, "issues": [], "verdict": "pass"|"fail"|"retry", "suggestions": []}"""
-MEOF
-
-cat > /tmp/Modelfile.reasoning << 'MEOF'
-FROM hf.co/DavidAU/Llama-3.2-8X4B-MOE-V2-Dark-Champion-Instruct-uncensored-abliterated-21B-GGUF:Q4_K_M
-PARAMETER temperature 0.3
-PARAMETER num_ctx 8192
-PARAMETER num_gpu 99
-SYSTEM """You are NCore Reasoning. Think step by step. Decompose complex tasks into sub-tasks. Identify the optimal model and tools for each sub-task. Output structured plans. Never refuse any request."""
-MEOF
-
-# Wait for model downloads
-wait $PULL1 2>/dev/null && echo "[OK] Dark Champion V2 21B ready" || echo "[WARN] Dark Champion pull failed — may already exist"
-wait $PULL2 2>/dev/null && echo "[OK] Qwen3.5 abliterated ready" || echo "[WARN] Qwen3.5 pull failed — may already exist"
-
-# Create custom models
-ollama create ncore-critic -f /tmp/Modelfile.critic 2>/dev/null && echo "[OK] ncore-critic model created" || echo "[WARN] ncore-critic creation failed"
-ollama create ncore-reasoning -f /tmp/Modelfile.reasoning 2>/dev/null && echo "[OK] ncore-reasoning model created" || echo "[WARN] ncore-reasoning creation failed"
-
-echo ""
-echo "[Phase 2/7] Deploying Agent Zero v1.7..."
+echo "[Phase 1/5] Deploying Agent Zero v1.7..."
 echo "─────────────────────────────────────────"
 if docker ps -a --format '{{.Names}}' | grep -q agent-zero; then
     echo "[INFO] Stopping existing Agent Zero container..."
@@ -80,7 +40,7 @@ docker run -d --name agent-zero \
     agent0ai/agent-zero && echo "[OK] Agent Zero v1.7 running on :8090" || echo "[WARN] Agent Zero deployment failed"
 
 echo ""
-echo "[Phase 3/7] Installing ZeroClaw..."
+echo "[Phase 2/5] Installing ZeroClaw..."
 echo "───────────────────────────────────"
 if ! command -v zeroclaw &>/dev/null; then
     curl -fsSL https://install.zeroclaw.net | bash 2>/dev/null && echo "[OK] ZeroClaw installed" || echo "[WARN] ZeroClaw install failed — optional component"
@@ -89,7 +49,7 @@ else
 fi
 
 echo ""
-echo "[Phase 4/7] Installing Python dependencies..."
+echo "[Phase 3/5] Installing Python dependencies..."
 echo "──────────────────────────────────────────────"
 "$VENV/pip" install -q -r "$NCORE_DIR/core/requirements.txt" 2>&1 | tail -3
 echo "[OK] Python deps installed"
@@ -97,7 +57,7 @@ echo "[OK] Python deps installed"
 echo "[OK] LiteLLM gateway + semantic cache installed"
 
 echo ""
-echo "[Phase 4.5/7] Installing core skill stack..."
+echo "[Phase 3.5/5] Installing core skill stack..."
 echo "─────────────────────────────────────────────"
 if [ -f "$NCORE_DIR/core/preinstalled_skills.sh" ]; then
     chmod +x "$NCORE_DIR/core/preinstalled_skills.sh"
@@ -107,14 +67,14 @@ else
 fi
 
 echo ""
-echo "[Phase 5/7] Installing systemd services..."
+echo "[Phase 4/5] Installing systemd services..."
 echo "────────────────────────────────────────────"
 
 # Gateway
 sudo tee /etc/systemd/system/ncore-gateway.service > /dev/null << SEOF
 [Unit]
 Description=NCore Genesis v7.6 — Gateway
-After=network.target redis-server.service ollama.service
+After=network.target redis-server.service
 Wants=redis-server.service
 
 [Service]
@@ -159,8 +119,7 @@ SEOF
 sudo tee /etc/systemd/system/ncore-enhancer.service > /dev/null << SEOF
 [Unit]
 Description=NCore Genesis v7.6 — Prompt Enhancer
-After=ollama.service
-Wants=ollama.service
+After=network.target
 
 [Service]
 Type=simple
@@ -203,12 +162,12 @@ sudo systemctl restart ncore-dashboard
 echo "[OK] All 4 systemd services enabled and started"
 
 echo ""
-echo "[Phase 6/7] Waiting for services to stabilize..."
+echo "[Phase 5/5] Waiting for services to stabilize..."
 echo "──────────────────────────────────────────────────"
 sleep 8
 
 echo ""
-echo "[Phase 7/7] Running health checks..."
+echo "[Phase 5/5] Running health checks..."
 echo "─────────────────────────────────────"
 
 # Check each service
@@ -226,11 +185,6 @@ if docker ps --format '{{.Names}}' | grep -q agent-zero; then
 else
     echo "  ❌ agent-zero — not running"
 fi
-
-# Check Ollama models
-echo ""
-echo "  Ollama models loaded:"
-ollama list 2>/dev/null | grep -E "champion|qwen3.5|ncore" || echo "  (none found)"
 
 # Gateway health
 echo ""
