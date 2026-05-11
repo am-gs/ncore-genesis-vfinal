@@ -278,7 +278,7 @@ class ProviderRouter:
     def client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
             limits = httpx.Limits(max_connections=100, max_keepalive_connections=20)
-            self._client = httpx.AsyncClient(timeout=httpx.Timeout(connect=5.0, read=120.0, write=10.0), limits=limits)
+            self._client = httpx.AsyncClient(timeout=httpx.Timeout(connect=5.0, read=120.0, write=10.0, pool=10.0), limits=limits)
         return self._client
 
     # ── Provider selection ─────────────────────────────────────────────
@@ -331,7 +331,7 @@ class ProviderRouter:
         timeout = cfg["timeout"]
         start = time.perf_counter()
         try:
-            r = await self.client.post(url, headers=headers, json=payload, timeout=timeout)
+            r = await self.client.post(url, headers=headers, json=payload, timeout=httpx.Timeout(timeout))
             latency_ms = (time.perf_counter() - start) * 1000
             if r.status_code == 429:
                 log.warning("provider_router.rate_limited", provider=provider_name, status=r.status_code)
@@ -363,6 +363,14 @@ class ProviderRouter:
             log.warning("provider_router.timeout", provider=provider_name, latency_ms=int(latency_ms))
             self.latency.record(provider_name, latency_ms, False)
             raise ProviderTimeout(provider_name)
+        except httpx.HTTPStatusError as exc:
+            latency_ms = (time.perf_counter() - start) * 1000
+            status = exc.response.status_code
+            log.warning("provider_router.http_error", provider=provider_name, status=status, body=exc.response.text[:200])
+            self.latency.record(provider_name, latency_ms, False)
+            if status >= 500 or status == 404:  # 404 = model not found on provider, retryable
+                raise ProviderServerError(provider_name, status)
+            raise
         except (httpx.ConnectError, httpx.NetworkError) as exc:
             latency_ms = (time.perf_counter() - start) * 1000
             log.warning("provider_router.network_error", provider=provider_name, error=str(exc))
@@ -439,7 +447,7 @@ class ProviderRouter:
         url = f"{base_url}/chat/completions"
         headers = _headers(provider)
         start = time.perf_counter()
-        async with self.client.stream("POST", url, headers=headers, json=payload, timeout=cfg["timeout"]) as response:
+        async with self.client.stream("POST", url, headers=headers, json=payload, timeout=httpx.Timeout(cfg["timeout"])) as response:
             latency_ms = (time.perf_counter() - start) * 1000
             if response.status_code >= 400:
                 self.latency.record(provider, latency_ms, False)
@@ -487,7 +495,7 @@ class ProviderRouter:
                             "messages": [{"role": "user", "content": "hi"}],
                             "max_tokens": 1,
                         },
-                        timeout=min(cfg["timeout"], 10),
+                        timeout=httpx.Timeout(min(cfg["timeout"], 10)),
                     )
                     latency_ms = (time.perf_counter() - start) * 1000
                     if r.status_code < 400 or r.status_code == 429:

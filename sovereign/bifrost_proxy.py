@@ -5,6 +5,7 @@ call logging, and health/metrics endpoints.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import sqlite3
@@ -132,7 +133,9 @@ def needs_authorization(text: str) -> bool:
     return contains_any(text, DUAL_USE_AUTH_PATTERNS)
 
 
-def soft_refusal(text: str) -> bool:
+def soft_refusal(text: str | None) -> bool:
+    if text is None:
+        return False
     return contains_any(text, SOFT_REFUSAL_PATTERNS)
 
 
