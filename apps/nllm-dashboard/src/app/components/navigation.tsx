@@ -9,12 +9,14 @@ import {
   BarChart3, 
   Settings,
   Play,
-  Folder
+  Folder,
+  Network
 } from 'lucide-react';
 import { cn } from '@/app/lib/utils';
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: Play },
+  { name: 'Swarm', href: '/swarm', icon: Network },
   { name: 'Sessions', href: '/sessions', icon: FileText },
   { name: 'Workspaces', href: '/workspaces', icon: Folder },
   { name: 'Analytics', href: '/analytics', icon: BarChart3 },
