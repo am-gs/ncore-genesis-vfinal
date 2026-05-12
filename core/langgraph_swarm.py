@@ -12,6 +12,7 @@ Integrates:
 """
 
 import asyncio
+import re
 import json
 import os
 import time
@@ -68,7 +69,12 @@ def _get_checkpointer() -> BaseCheckpointSaver:
         import psycopg
         conn = psycopg.connect(POSTGRES_URI, connect_timeout=2)
         conn.close()
-        return next(PostgresSaver.from_conn_string(POSTGRES_URI))
+        saver = PostgresSaver.from_conn_string(POSTGRES_URI)
+        import inspect
+        if inspect.isgenerator(saver):
+            inst = next(saver)
+            return inst
+        return saver
     except Exception:
         return MemorySaver()
 
@@ -163,15 +169,45 @@ async def planner_node(state: SovereignState) -> SovereignState:
         {"role": "user", "content": f"Task: {state['prompt']}\n\nPlan:"},
     ]
     try:
-        raw = await llm.chat(messages, temperature=0.3, max_tokens=1200)
-        cleaned = raw.strip().strip("`").strip()
-        if cleaned.startswith("json"):
-            cleaned = cleaned[4:].strip()
-        plan = json.loads(cleaned)
-        if isinstance(plan, dict) and "steps" in plan:
-            plan = plan["steps"]
-        if not isinstance(plan, list):
+        raw = await llm.chat(messages, temperature=0.1, max_tokens=1500)
+        text = raw.strip()
+        plan = None
+
+        # 1. Try fenced code blocks (last one first — usually the final answer)
+        for m in reversed(list(re.finditer(r'```(?:json)?\s*(.*?)\s*```', text, re.S))):
+            try:
+                cand = m.group(1).strip().strip("`").strip()
+                if cand.startswith("json"):
+                    cand = cand[4:].strip()
+                parsed = json.loads(cand)
+                if isinstance(parsed, list):
+                    plan = parsed
+                    break
+                if isinstance(parsed, dict) and "steps" in parsed:
+                    plan = parsed["steps"]
+                    break
+            except Exception:
+                continue
+
+        # 2. Try outermost bare JSON array or object
+        if plan is None:
+            for pat in [r'(\[.*\])', r'(\{.*\})']:
+                m = re.search(pat, text, re.S)
+                if m:
+                    try:
+                        parsed = json.loads(m.group(1))
+                        if isinstance(parsed, list):
+                            plan = parsed
+                            break
+                        if isinstance(parsed, dict) and "steps" in parsed:
+                            plan = parsed["steps"]
+                            break
+                    except Exception:
+                        continue
+
+        if plan is None:
             plan = []
+            state["error"] = "Planner: could not extract JSON plan from model response"
     except Exception as exc:
         plan = []
         state["error"] = f"Planner error: {exc}"
@@ -412,7 +448,11 @@ def build_swarm_graph() -> Any:
         route_after_planner,
         {"dispatch": "dispatch", END: END},
     )
-    builder.add_edge("dispatch", "verify")
+    builder.add_conditional_edges(
+        "dispatch",
+        route_after_dispatch,
+        {"verify": "verify", END: END},
+    )
     builder.add_conditional_edges(
         "verify",
         route_after_verify,
