@@ -28,11 +28,22 @@ from fastapi.responses import HTMLResponse, PlainTextResponse, StreamingResponse
 
 import manus_engine
 
+try:
+    from core.a2a_protocol import router as a2a_router, list_agent_cards, create_a2a_task, update_a2a_task_status, add_a2a_message, get_a2a_task, A2ATaskStatus, TaskMessage
+    from core.ncore_critic import critic_validate
+    A2A_AVAILABLE = True
+except Exception as _a2a_err:
+    A2A_AVAILABLE = False
+    a2a_router = None
+
 ROOT = Path('/home/ubuntu/sovereign')
 LOGS = ROOT / 'logs'
 TASKS_FILE = ROOT / 'tasks.json'
 
 app = FastAPI(title='Sovereign Mission Control')
+
+if A2A_AVAILABLE and a2a_router is not None:
+    app.include_router(a2a_router, tags=["a2a"])
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -191,6 +202,16 @@ async def _simulate_task(task_id: str) -> None:
             _save_tasks()
             _broadcast(task_id, {"status": task["status"], "progress": task["progress"]})
             if task["status"] == TaskState.COMPLETED:
+                # Run tri-layer critic after subagent task completion
+                intent = task.get("description", "")
+                output = json.dumps(task.get("artifacts", [])) if task.get("artifacts") else task.get("output", "")
+                try:
+                    critic = await critic_validate(intent, output)
+                    task["critic"] = critic.to_dict()
+                    _save_tasks()
+                    _broadcast(task_id, {"status": "completed", "critic": task["critic"]})
+                except Exception as ce:
+                    _broadcast(task_id, {"status": "completed", "critic_error": str(ce)})
                 return
 
 
@@ -614,6 +635,70 @@ async def execute_task(task_id: str):
     asyncio.create_task(_run_manus(task_id))
     _broadcast(task_id, {"status": "running", "agent": "manus"})
     return task
+
+
+# ---------------------------------------------------------------------------
+# A2A / Agent endpoints
+# ---------------------------------------------------------------------------
+
+@app.get("/api/agents")
+async def list_agents():
+    """List all registered A2A agents with their cards."""
+    if not A2A_AVAILABLE:
+        raise HTTPException(503, "A2A module not available")
+    cards = list_agent_cards()
+    return {"agents": [card.to_dict() for card in cards]}
+
+
+@app.post("/api/agents/{agent_id}/tasks")
+async def agent_task(agent_id: str, body: dict):
+    """Submit a task to a specific A2A agent."""
+    if not A2A_AVAILABLE:
+        raise HTTPException(503, "A2A module not available")
+    from core.a2a_protocol import get_agent_card, _register_dummy_agents
+    card = get_agent_card(agent_id)
+    if not card:
+        raise HTTPException(404, "agent not found")
+    message = TaskMessage(
+        role="user",
+        parts=body.get("parts", [{"type": "text", "text": body.get("message", "")}]),
+        metadata=body.get("metadata", {}),
+    )
+    req_id = body.get("id") or str(uuid.uuid4())
+    from core.a2a_protocol import SendTaskRequest
+    req = SendTaskRequest(id=req_id, message=message, metadata=body.get("metadata", {}))
+    task = await create_a2a_task(req)
+    # Transition to working and simulate completion for demo
+    await update_a2a_task_status(task.id, A2ATaskStatus.WORKING)
+    asyncio.create_task(_simulate_agent_task(agent_id, task.id))
+    return task.to_dict()
+
+
+async def _simulate_agent_task(agent_id: str, task_id: str):
+    """Simulate A2A agent work and complete the task."""
+    await asyncio.sleep(1.5)
+    result_text = f"Agent '{agent_id}' processed the task successfully."
+    await add_a2a_message(
+        task_id,
+        TaskMessage(role="agent", parts=[{"type": "text", "text": result_text}]),
+    )
+    await update_a2a_task_status(
+        task_id,
+        A2ATaskStatus.COMPLETED,
+        artifacts=[{"type": "text", "text": result_text}],
+    )
+    # Run critic on A2A task output
+    a2a_task = await get_a2a_task(task_id)
+    if a2a_task:
+        intent = " ".join(
+            p.get("text", "") for m in a2a_task.messages for p in (m.parts if isinstance(m.parts, list) else [])
+        )
+        output = result_text
+        try:
+            critic = await critic_validate(intent, output)
+            a2a_task.metadata["critic"] = critic.to_dict()
+        except Exception:
+            pass
 
 
 @app.get("/api/tasks/{task_id}/screenshots")
