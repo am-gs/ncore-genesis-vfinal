@@ -20,7 +20,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${inter.variable} ${jetbrains.variable} ${libre.variable}`}>
+    <html lang="en" data-theme="dark" className={`${inter.variable} ${jetbrains.variable} ${libre.variable}`}>
       <body className="h-screen overflow-hidden bg-bg text-text font-sans antialiased">
         <div className="ambient-bg" />
         <ClientLayout>

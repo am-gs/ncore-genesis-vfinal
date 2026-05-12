@@ -6,6 +6,7 @@ import { WorkspacePanel } from '@/app/components/workspace-panel';
 import { StatusPanel } from '@/app/components/status-panel';
 import { useWebSocket } from '@/app/contexts/websocket';
 import { Session, AgentStatus, TaskResult, FileNode, BudgetInfo, TaskPlan } from '@/app/types';
+import { Zap } from 'lucide-react';
 
 const DEFAULT_BUDGET: BudgetInfo = {
   daily: 0.12,
@@ -76,9 +77,11 @@ export default function DashboardPage() {
   const [agents, setAgents] = useState<AgentStatus[]>(DEMO_AGENT_STATUSES);
   const [result, setResult] = useState<TaskResult | null>(null);
   const [terminalOutput, setTerminalOutput] = useState<{ output: string; is_stderr: boolean }[]>([
-    { output: '> Initializing NLLM.ING agent environment...', is_stderr: false },
-    { output: '> Connecting to Bifrost gateway...', is_stderr: false },
-    { output: '> Bifrost: healthy, budget: $1.88/2.00 daily, cache: 34%', is_stderr: false },
+    { output: '> Initializing NLLM.ING sovereign swarm...', is_stderr: false },
+    { output: '> LangGraph PostgreSQL checkpointer: connected', is_stderr: false },
+    { output: '> A2A protocol mesh: 4 agents registered', is_stderr: false },
+    { output: '> Bifrost: healthy, budget: $1.88/$2.00 daily, cache: 34%', is_stderr: false },
+    { output: '> Kimi K2.6 via Fireworks: ready (accounts/fireworks/models/kimi-k2p6)', is_stderr: false },
     { output: '> Ready. Enter a task to begin.', is_stderr: false },
   ]);
   const [browserUrl, setBrowserUrl] = useState('');
@@ -139,15 +142,39 @@ export default function DashboardPage() {
   return (
     <div className="flex h-screen w-full">
       {/* Panel 1: Chat / Task Input */}
-      <div className="w-72 flex-shrink-0 h-full">
-        <ChatPanel
-          sessions={sessions}
-          activeSessionId={activeSessionId}
-          onSelectSession={setActiveSessionId}
-          onRunTask={handleRunTask}
-          onStopTask={handleStopTask}
-          onPauseTask={handlePauseTask}
-        />
+      <div className="w-72 flex-shrink-0 h-full flex flex-col">
+        {/* Sovereign Banner */}
+        <div className="px-4 py-3 border-b border-line bg-panel">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="h-6 w-6 rounded-md bg-accent/10 flex items-center justify-center">
+              <Zap className="h-3.5 w-3.5 text-accent" />
+            </div>
+            <div>
+              <h1 className="text-xs font-semibold">NLLM.ING</h1>
+              <p className="text-[9px] text-text-tertiary">Sovereign Agent Swarm</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-1.5">
+            <div className="rounded bg-bg-2 border border-line px-2 py-1.5">
+              <p className="text-[9px] text-text-tertiary">Cost</p>
+              <p className="text-[11px] font-semibold text-ok">$1.88 / $50</p>
+            </div>
+            <div className="rounded bg-bg-2 border border-line px-2 py-1.5">
+              <p className="text-[9px] text-text-tertiary">vs Manus.im</p>
+              <p className="text-[11px] font-semibold text-accent">4× cheaper</p>
+            </div>
+          </div>
+        </div>
+        <div className="flex-1 overflow-hidden">
+          <ChatPanel
+            sessions={sessions}
+            activeSessionId={activeSessionId}
+            onSelectSession={setActiveSessionId}
+            onRunTask={handleRunTask}
+            onStopTask={handleStopTask}
+            onPauseTask={handlePauseTask}
+          />
+        </div>
       </div>
 
       {/* Panel 2: Workspace (tabs) */}
