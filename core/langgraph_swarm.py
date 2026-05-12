@@ -156,76 +156,141 @@ def get_ollama_llm() -> AsyncLLMClient:
 # ── Graph Nodes ──────────────────────────────────────────────────────────────
 
 async def planner_node(state: SovereignState) -> SovereignState:
-    """Call Bifrost (Kimi K2.6) to generate a multi-step plan."""
+    """Call Bifrost (Kimi K2.6) to generate a multi-step plan.
+
+    Implements a 2-attempt retry with progressively stricter prompts to
+    handle reasoning models (Kimi K2.6) that emit thinking blocks before the
+    actual JSON answer.
+    """
     llm = get_bifrost_llm()
-    system = (
-        "You are the Sovereign Planner. Given a task, emit a JSON array of plan steps. "
-        "Each step has: id (string), description (string), tool (one of terminal_execute, "
-        "file_write, code_execute_python, spawn_subagent), input (object with args). "
-        "Return ONLY valid JSON — no markdown fences."
-    )
-    messages = [
-        {"role": "system", "content": system},
-        {"role": "user", "content": f"Task: {state['prompt']}\n\nPlan:"},
-    ]
-    try:
-        raw = await llm.chat(messages, temperature=0.1, max_tokens=1500)
-        text = raw.strip()
-        plan = None
 
-        # 1. Try fenced code blocks (last one first — usually the final answer)
-        for m in reversed(list(re.finditer(r'```(?:json)?\s*(.*?)\s*```', text, re.S))):
-            try:
-                cand = m.group(1).strip().strip("`").strip()
-                if cand.startswith("json"):
-                    cand = cand[4:].strip()
-                parsed = json.loads(cand)
-                if isinstance(parsed, list):
-                    plan = parsed
-                    break
-                if isinstance(parsed, dict) and "steps" in parsed:
-                    plan = parsed["steps"]
-                    break
-            except Exception:
-                continue
+    def _make_messages(attempt: int) -> list[dict[str, str]]:
+        if attempt == 0:
+            system = (
+                "You are the Sovereign Planner. Given a task, emit a JSON array of plan steps. "
+                "Each step has: id (string), description (string), tool (one of terminal_execute, "
+                "file_write, code_execute_python, spawn_subagent), input (object with args). "
+                "Return ONLY valid JSON — no markdown fences, no explanation, no thinking."
+            )
+        else:
+            system = (
+                "EMIT ONLY JSON. No text before or after. No markdown fences. "
+                "Output must be a single valid JSON array of objects with keys: "
+                "id, description, tool, input. Nothing else."
+            )
+        return [
+            {"role": "system", "content": system},
+            {"role": "user", "content": f"Task: {state['prompt']}\n\nPlan:"},
+        ]
 
-        # 2. Try outermost bare JSON array or object
-        if plan is None:
-            for pat in [r'(\[.*\])', r'(\{.*\})']:
-                m = re.search(pat, text, re.S)
-                if m:
+    plan = None
+    last_error = None
+
+    # Attempt 0: Bifrost (Kimi K2.6 / Fireworks)
+    # Attempt 1: Ollama local fallback (qwen3-8b) — faster, no rate limits
+    for attempt in range(2):
+        try:
+            if attempt == 0:
+                raw = await llm.chat(
+                    _make_messages(attempt),
+                    temperature=0.1,
+                    max_tokens=2000,
+                )
+            else:
+                ollama = get_ollama_llm()
+                raw = await ollama.chat(
+                    _make_messages(attempt),
+                    temperature=0.0,
+                    max_tokens=2000,
+                )
+            text = raw.strip()
+            plan = None
+
+            # 1. Last fenced block first
+            for m in reversed(list(re.finditer(r'```(?:json)?\s*(.*?)\s*```', text, re.S))):
+                try:
+                    cand = m.group(1).strip().strip("`").strip()
+                    if cand.startswith("json"):
+                        cand = cand[4:].strip()
+                    parsed = json.loads(cand)
+                    if isinstance(parsed, list):
+                        plan = parsed
+                        break
+                    if isinstance(parsed, dict) and "steps" in parsed:
+                        plan = parsed["steps"]
+                        break
+                except Exception:
+                    continue
+
+            # 2. JSONDecoder scan for bare JSON
+            if plan is None:
+                decoder = json.JSONDecoder()
+                idx = 0
+                while idx < len(text):
+                    arr_pos = text.find("[", idx)
+                    obj_pos = text.find("{", idx)
+                    if arr_pos == -1 and obj_pos == -1:
+                        break
+                    idx = min(p for p in [arr_pos, obj_pos] if p != -1)
                     try:
-                        parsed = json.loads(m.group(1))
+                        parsed, end = decoder.raw_decode(text, idx)
                         if isinstance(parsed, list):
                             plan = parsed
                             break
                         if isinstance(parsed, dict) and "steps" in parsed:
                             plan = parsed["steps"]
                             break
+                        idx = end
                     except Exception:
-                        continue
+                        idx += 1
 
-        if plan is None:
-            plan = []
-            state["error"] = "Planner: could not extract JSON plan from model response"
-    except Exception as exc:
+            if plan is not None:
+                break
+        except Exception as exc:
+            last_error = str(exc)
+            continue
+
+    # Validate: every step must be a dict with at least 'tool' or 'description'
+    if isinstance(plan, list) and plan:
+        validated = []
+        for s in plan:
+            if isinstance(s, dict) and ("tool" in s or "description" in s):
+                validated.append(s)
+            elif isinstance(s, dict):
+                # dict but missing keys — wrap it
+                validated.append({
+                    "id": s.get("id", f"step-{len(validated)}"),
+                    "description": s.get("description", str(s)),
+                    "tool": s.get("tool", "terminal_execute"),
+                    "input": s.get("input", {"command": f"echo '{json.dumps(s)}'"}),
+                })
+        plan = validated
+
+    if not isinstance(plan, list) or not plan:
         plan = []
-        state["error"] = f"Planner error: {exc}"
-        # error is non-fatal: fallback plan generated below
-
-    if not plan:
-        plan = [
-            {
-                "id": "step-0",
-                "description": f"Execute fallback terminal for: {state['prompt']}",
+        state["error"] = f"Planner: could not extract JSON plan from model response (last error: {last_error})"
+        # Deterministic fallback: break prompt into terminal commands by newlines
+        lines = [l.strip() for l in state["prompt"].split("\n") if l.strip()]
+        plan = []
+        for i, line in enumerate(lines[:8]):  # cap at 8 steps
+            plan.append({
+                "id": f"step-{i}",
+                "description": line[:120],
                 "tool": "terminal_execute",
-                "input": {"command": f"echo 'No plan generated for: {state['prompt']}'"},
-            }
-        ]
+                "input": {"command": line[:500]},
+            })
 
     for i, step in enumerate(plan):
-        step.setdefault("id", f"step-{i}")
-        step.setdefault("status", "pending")
+        if isinstance(step, dict):
+            step.setdefault("id", f"step-{i}")
+            step.setdefault("status", "pending")
+        else:
+            plan[i] = {
+                "id": f"step-{i}",
+                "description": str(step)[:120],
+                "tool": "terminal_execute",
+                "input": {"command": f"echo '{str(step)[:200]}'"},
+            }
 
     state["plan_steps"] = plan
     state["status"] = "dispatching"
