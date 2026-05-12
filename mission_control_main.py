@@ -28,6 +28,12 @@ from fastapi.responses import HTMLResponse, PlainTextResponse, StreamingResponse
 
 import manus_engine
 
+# LangGraph Swarm integration
+try:
+    import core.langgraph_swarm as swarm
+except Exception:
+    import langgraph_swarm as swarm
+
 ROOT = Path('/home/ubuntu/sovereign')
 LOGS = ROOT / 'logs'
 TASKS_FILE = ROOT / 'tasks.json'
@@ -443,6 +449,34 @@ async def create_task(body: dict):
     _start_simulation(task["id"])
     _broadcast(task["id"], {"status": "running", "progress": 0})
 
+    return task
+
+
+@app.post("/api/tasks/swarm")
+async def create_swarm_task(body: dict):
+    """Create a task and run it through the LangGraph swarm pipeline.
+
+    Accepts {name, description, prompt}. Returns task metadata and starts
+    the swarm in the background. Progress streams via /api/tasks/stream.
+    """
+    name = body.get("name")
+    description = body.get("description", "")
+    prompt = body.get("prompt", description)
+    if not name:
+        raise HTTPException(400, "name is required")
+
+    async with _lock:
+        task = new_task_dict(name, description, agent="swarm", status=TaskState.PLANNING)
+        _tasks[task["id"]] = task
+        _save_tasks()
+
+    async with _lock:
+        task["status"] = TaskState.RUNNING
+        task["updated_at"] = iso_now()
+        _save_tasks()
+    _stop_simulation(task["id"])
+    asyncio.create_task(swarm.run_swarm_task(task["id"], prompt))
+    _broadcast(task["id"], {"status": "running", "agent": "swarm"})
     return task
 
 
