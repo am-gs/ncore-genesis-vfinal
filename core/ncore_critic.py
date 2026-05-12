@@ -135,10 +135,21 @@ async def _bifrost_chat(
 
 
 async def _llm_ask(messages: List[dict], use_local_fallback: bool = True) -> str:
-    """Prefer Bifrost remote; fall back to Ollama local."""
+    """Prefer Bifrost remote; fall back to Ollama local.
+
+    If Bifrost returns empty (refusal/format failure), retry via OpenRouter
+    free-tier before local fallback, per sovereign stack policy.
+    """
     remote = await _bifrost_chat("deepseek/deepseek-chat", messages)
     if remote.strip():
         return remote
+
+    # OpenRouter free-tier lane for soft refusals / structured-output failures
+    or_free = await _bifrost_chat("openrouter/free", messages)
+    if or_free.strip():
+        log.info("critic.openrouter_free_fallback")
+        return or_free
+
     if use_local_fallback:
         local = await _local_chat(messages)
         return local

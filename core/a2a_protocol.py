@@ -259,10 +259,11 @@ async def stream_tasks():
                 snapshot = [t.to_dict() for t in _a2a_tasks.values()]
             yield f"data: {json.dumps({'type': 'snapshot', 'tasks': snapshot})}\n\n"
             while True:
-                payload = await asyncio.wait_for(q.get(), timeout=30.0)
-                yield f"data: {payload}\n\n"
-        except asyncio.TimeoutError:
-            yield f"data: {json.dumps({'type': 'heartbeat'})}\n\n"
+                try:
+                    payload = await asyncio.wait_for(q.get(), timeout=30.0)
+                    yield f"data: {payload}\n\n"
+                except asyncio.TimeoutError:
+                    yield f"data: {json.dumps({'type': 'heartbeat'})}\n\n"
         except asyncio.CancelledError:
             pass
         finally:

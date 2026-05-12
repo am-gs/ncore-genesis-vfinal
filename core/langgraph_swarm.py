@@ -491,9 +491,12 @@ async def run_swarm_task(
     config = {"configurable": {"thread_id": thread_id or task_id}}
 
     try:
-        import mission_control as mc
+        import mission_control_main as mc
     except Exception:
-        mc = None
+        try:
+            import mission_control as mc
+        except Exception:
+            mc = None
 
     if mc:
         mc._broadcast(task_id, {"status": "planning", "agent": "swarm"})
@@ -535,9 +538,9 @@ async def run_swarm_task(
             t = mc._tasks.get(task_id)
             if t:
                 t["status"] = (
-                    mc.TaskState.COMPLETED
+                    mc.TaskState.COMPLETED.value
                     if final_state["status"] == "completed"
-                    else mc.TaskState.FAILED
+                    else mc.TaskState.FAILED.value
                 )
                 t["updated_at"] = _iso_now()
                 t["latency_ms"] = round(latency_ms, 2)
@@ -574,9 +577,12 @@ async def resume_swarm_task(
     config = {"configurable": {"thread_id": thread_id or task_id}}
 
     try:
-        import mission_control as mc
+        import mission_control_main as mc
     except Exception:
-        mc = None
+        try:
+            import mission_control as mc
+        except Exception:
+            mc = None
 
     if mc:
         mc._broadcast(
